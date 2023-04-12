@@ -8,27 +8,30 @@ struct PerceptionType
     state_covariance::Matrix{Float64}
 end
 
+mutable struct Controls
+    target_speed::Float64
+    steering_angle::Float64
+end
+
 function isfull(ch::Channel)
     length(ch.data) ≥ ch.sz_max
 end
 
 function autonomous_client(host::IPAddr=IPv4(0), port=4444)
-    @info "hi"
     socket = Sockets.connect(host, port)
-    @info "wassup"
+
     map = training_map()
 
     gps_channel = Channel{GPSMeasurement}(32)
     imu_channel = Channel{IMUMeasurement}(32)
     cam_channel = Channel{CameraMeasurement}(32)
     gt_channel = Channel{GroundTruthMeasurement}(32)
-    @info "here"
 
     #localization_state_channel = Channel{LocalizationType}(1)
     perception_state_channel = Channel{PerceptionType}(1)
-    @info "sup"
-    target_map_segment = 0 # (not a valid segment, will be overwritten by message)
-    ego_vehicle_id = 0 # (not a valid id, will be overwritten by message. This is used for discerning ground-truth messages)
+
+    target_map_segment = 0
+    ego_vehicle_id = 0
 
     msg = deserialize(socket)
     @info msg
@@ -40,9 +43,6 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
         target_map_segment = state_msg.target_segment
         ego_vehicle_id = state_msg.vehicle_id
 
-        @info target_map_segment
-        @info ego_vehicle_id
-
         for meas in measurements
             if meas isa GPSMeasurement
                 !isfull(gps_channel) && put!(gps_channel, meas)
@@ -53,11 +53,19 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
             elseif meas isa GroundTruthMeasurement
                 !isfull(gt_channel) && put!(gt_channel, meas)
             end
-			@info "meas: $meas"
+            # @info "meas: $meas"
         end
     end
 
+    controlled = true
+    controls = Controls(0.0, 0.0)
+
     #@async localize(gps_channel, imu_channel, localization_state_channel)
     #@async perception(cam_channel, localization_state_channel, perception_state_channel)
-    @async decision_making(gt_channel, perception_state_channel, map, 44, socket)
+    @async decision_making(gt_channel, perception_state_channel, map, socket, controls)
+
+    while controlled && isopen(socket)
+        cmd = VehicleCommand(controls.steering_angle, controls.target_speed, controlled)
+        serialize(socket, cmd)
+    end
 end
