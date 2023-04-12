@@ -23,9 +23,8 @@ function decision_making(localization_state_channel,
             @info x
 
             """TODO"""
-            # STEP 1 -> fix get_segment_from_localization -> currently just goes forever I think
-            curr_seg = get_segment_from_localization(x[1], x[2], map)
-            @info curr_seg
+            # STEP 1 -> fix get_segment_from_localization -> currently just goes forever I think --> no, the problem is that x is always an empty array so x[1] errors
+            # curr_seg = get_segment_from_localization(x[1], x[2], map)
 
             """TODO"""
             # STEP 2 -> fix get_path
@@ -86,28 +85,35 @@ function decision_making(localization_state_channel,
 
 end
 
+function P(map)
+    for (id, segment) in map
+        print(segment.lane_boundaries)
+        print("\n")
+    end
+end
+
 """
 Get segment ID from localization x and y state and map
 """
 function get_segment_from_localization(x, y, map)
-    for segment in map
+    for (id, segment) in map
         land_boundaries1 = segment.lane_boundaries[1]
         land_boundaries2 = segment.lane_boundaries[2]
-        if (segment.curvature == 0) # if straight segment
+        if (segment.lane_boundaries[1].curvature == 0) # if straight segment
             m1, b1 = find_line_equation(land_boundaries1.pt_a, land_boundaries1.pt_b) # lane boundary 1
             m2, b2 = find_line_equation(land_boundaries2.pt_a, land_boundaries2.pt_b) # lane boundary 2
-            m3, b3 = find_line_equation(land_boundaries1.pt_a[1], land_boundaries2.pt_a[1], land_boundaries2.pt_a[2], land_boundaries1.pt_a[2]) # start boundary
-            m4, b4 = find_line_equation(land_boundaries1.pt_b[1], land_boundaries2.pt_b[1], land_boundaries2.pt_b[2], land_boundaries1.pt_b[2]) # end boundary
+            m3, b3 = find_line_equation([land_boundaries1.pt_a[1], land_boundaries2.pt_a[1]], [land_boundaries2.pt_a[2], land_boundaries1.pt_a[2]]) # start boundary
+            m4, b4 = find_line_equation([land_boundaries1.pt_b[1], land_boundaries2.pt_b[1]], [land_boundaries2.pt_b[2], land_boundaries1.pt_b[2]]) # end boundary
             if (m1 * x + b1 < y && m2 * x + b2 > y && m3 * x + b3 < y && m4 * x + b4 > y) # if within both boundaries
-                return segment
+                return id, segment
             end
         else # if curved segment
             r1 = 1 / land_boundaries1.curvature
             r2 = 1 / land_boundaries2.curvature
             c1, d1 = find_circle_center(land_boundaries1.pt_a[1], land_boundaries1.pt_a[2], land_boundaries1.pt_a[1], land_boundaries1.pt_b[2], r1)
             c2, d2 = find_circle_center(land_boundaries2.pt_a[1], land_boundaries2.pt_a[2], land_boundaries2.pt_a[1], land_boundaries2.pt_b[2], r2)
-            m3, b3 = find_line_equation(land_boundaries1.pt_a[1], land_boundaries2.pt_a[1], land_boundaries2.pt_a[2], land_boundaries1.pt_a[2]) # start boundary
-            m4, b4 = find_line_equation(land_boundaries1.pt_b[1], land_boundaries2.pt_b[1], land_boundaries2.pt_b[2], land_boundaries1.pt_b[2]) # end boundary
+            m3, b3 = find_line_equation([land_boundaries1.pt_a[1], land_boundaries2.pt_a[1]], [land_boundaries2.pt_a[2], land_boundaries1.pt_a[2]]) # start boundary
+            m4, b4 = find_line_equation([land_boundaries1.pt_b[1], land_boundaries2.pt_b[1]], [land_boundaries2.pt_b[2], land_boundaries1.pt_b[2]]) # end boundary
             if ((x - c1)^2 + (y - d1)^2 < r1^2 && (x - c2)^2 + (y - d2)^2 > r2^2 && m3 * x + b3 < y && m4 * x + b4 > y)
                 return segment
             end
@@ -152,7 +158,8 @@ function get_steering_angle(steering_angle, curr_x, curr_y, lane_boundaries, eps
 end
 
 """
-Given two coordinates, returns the equation of the line in y = mx + b form
+Given two coordinates, returns the equation of the line in y = mx + b form. 
+Note: tested and should work as intended
 """
 function find_line_equation(coord1, coord2)
     # Unpack coordinates
