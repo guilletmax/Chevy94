@@ -12,7 +12,8 @@ function decision_making(localization_state_channel,
         target_road_segment_id, 
         socket)
   
-    curr_seg =  get_current_segment(fetch(localization_state_channel))
+    x = fetch(localization_state_channel)
+    curr_seg =  get_segment_from_localization(x[1], x[2], map)
     path = get_path(map, curr_seg, target_road_segment_id)
     next_path_index = 2
     steering_angle = 0.0
@@ -32,7 +33,7 @@ function decision_making(localization_state_channel,
         x = fetch(localization_state_channel)
         latest_perception_state = fetch(perception_state_channel)
 
-        if (get_current_segment(fetch(x)) != curr_seg)
+        if (get_segment_from_localization(x[1], x[2], map) != curr_seg)
             if (crossed_segment_count < CROSSED_CONFIRMED_COUNT)
                 crossed_segment_count+=1
             else

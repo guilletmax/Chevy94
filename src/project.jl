@@ -13,6 +13,7 @@ function isfull(ch::Channel)
 end
 
 function autonomous_client(host::IPAddr=IPv4(0), port=4444)
+    @info "hi"
     socket = Sockets.connect(host, port)
     map_segments = training_map()
 
@@ -27,6 +28,7 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
     target_map_segment = 0 # (not a valid segment, will be overwritten by message)
     ego_vehicle_id = 0 # (not a valid id, will be overwritten by message. This is used for discerning ground-truth messages)
 
+    @info "hey"
     @async while isopen(socket)
         measurement_msg = deserialize(socket)
         target_map_segment = measurement_msg.target_segment
