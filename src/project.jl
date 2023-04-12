@@ -13,9 +13,7 @@ function isfull(ch::Channel)
 end
 
 function autonomous_client(host::IPAddr=IPv4(0), port=4444)
-
     socket = Sockets.connect(host, port)
-
     map_segments = training_map()
 
     gps_channel = Channel{GPSMeasurement}(32)
