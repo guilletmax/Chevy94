@@ -24,7 +24,7 @@ function decision_making(localization_state_channel,
     while isopen(socket)
         key = get_c()
         if key == 'q'
-            target_velocity = 0.0
+            target_speed = 0.0
             steering_angle = 0.0
             @info "Terminating Chevy94."
 		end
@@ -42,11 +42,14 @@ function decision_making(localization_state_channel,
 			end
 		end
         
-        update_steering_angle(steering_angle, x[1], x[2], curr_seg.lane_boundaries, epsilon)
+        steering_angle = .314
+        target_speed = 3.0
 
-        update_speed(target_speed, curr_seg.speed_limit)
+        # update_steering_angle(steering_angle, x[1], x[2], curr_seg.lane_boundaries, epsilon)
 
-        cmd = VehicleCommand(steering_angle, target_velocity, true)
+        # update_speed(target_speed, curr_seg.speed_limit)
+
+        cmd = VehicleCommand(steering_angle, target_speed, true)
         serialize(socket, cmd)
     end
 
