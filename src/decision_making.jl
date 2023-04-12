@@ -8,36 +8,32 @@ function decision_making(localization_state_channel,
         target_road_segment_id, 
         socket)
 
-    # do some setup
-    curr_seg = -1
-    new_seg = latest_localization_state[...]
-
-    # Get the directions to get to the destination segment
-    path = get_path(map, new_seg, target_road_segment_id)
+    curr_seg =  get_current_segment(fetch(localization_state_channel))
+    path = get_path(map, curr_seg, target_road_segment_id)
+    next_path_index = 2
+    steering_angle = 0.0
+    epsilon = 0.1
+    target_value = 0.0
+    crossed_segment_count = 0
+    const CROSSED_CONFIRMED_COUNT = 10
 
     while true
         latest_localization_state = fetch(localization_state_channel)
         latest_perception_state = fetch(perception_state_channel)
+
+        if (get_current_segment(fetch(localization_state_channel)) != curr_seg)
+            if (crossed_segment_count < CROSSED_CONFIRMED_COUNT)
+                crossed_segment_count+=1
+            else
+                curr_seg = path[next_path_index]
+                next_path_index+= 1
+                crossed_segment_count = 0
         
-        # Localization will output the current x and y coordinates, i have to parse the dictionary to find the corresponding segment id
-        new_seg = latest_localization_state[...]
-
-        if(new_seg != curr_seg) # if we have crossed into a new segment, make sure that we've crossed into the correct new segment
-            new_seg = get_road_segment(map, path[2]) # the new segment will be the next in the djikstra's array
-        end
-
-        # Get the directions to get to the destination segment
-        path = get_path(map, new_seg, target_road_segment_id)
-
-        # Update steering_angle if we deviate from the center localization_state
-        steering_angle = 0.0
-        epsilon = 0.1
         callibrate_lane_middle(steering_angle, curr_x, curr_y, new_seg.lane_boundaries, epsilon)
 
         # Update target_vel if we are not moving at the speed limit (also update if there is a vehicle in front of us to slow down)
         # For ciculrar tracks, if radius is bigger than the center line's radius, we are on the left side, if its less, we are on right side
-        target_vel = 0.0
-        speed_limit = new_seg.speed_limit
+        speed_limit = curr_seg.speed_limit
         update_speed(curr_speed, speed_limit, target_vel)
 
         cmd = VehicleCommand(steering_angle, target_vel, true)
@@ -47,10 +43,47 @@ function decision_making(localization_state_channel,
     end
 end
 
-# gets the road_segment object given the seg_id
-function get_road_segment(map, seg_id)
-    return map[seg_id]
+"""
+todo
+"""
+function get_segment_from_localization(x, y, map)
+    for segment in map
+        land_boundaries1 = segment.lane_boundaries[1]
+        land_boundaries2 = segment.lane_boundaries[2]
+        if(segment.curvature == 0)# if straight segment
+            m1, b1 = find_line_equation(land_boundaries1.pt_a, land_boundaries1.pt_b)
+            m2, b2 = find_line_equation(land_boundaries2.pt_a, land_boundaries2.pt_b)
+            if (m1 * x + b1 < y && m2 * x + b2 > y) # if within both boundaries
+                return segment
+            end
+        else # if curved segment
+            r1 = 1/land_boundaries1.curvature
+            r2 = 1/land_boundaries2.curvature
+            c1, d1 = find_circle_center(land_boundaries1.pt_a[1], land_boundaries1.pt_a[2], land_boundaries1.pt_a[1], land_boundaries1.pt_b[2], r1)
+            c2, d2 = find_circle_center(land_boundaries2.pt_a[1], land_boundaries2.pt_a[2], land_boundaries2.pt_a[1], land_boundaries2.pt_b[2], r2)
+            if((x-c1)^2+(y-d1)^2 < r1^2 && (x-c2)^2+(y-d2)^2 > r2^2)
+                return segment
+            end
+        end
+    end
+    return -1 # should never return -1, we should always be within one of the segments
 end
+
+"""
+Retrieve the segment given the state from localization
+"""
+function inside_segment(x)
+    lane_curve = lane_boundaries[1].curvature != 0
+        if lane_curve
+            return (inside_radius <= dist_to_circle_center(x) <= outside_radius) && (start_angle <= arc_angle(x) <= end_angle)
+        else
+            return (x inside left half_space && x inside right_half_space && x behind end_half_space && x past begin_half_space)
+
+function get_current_segment(x, map)
+    for (id, seg) in map
+        if inside_segment(x, seg)
+            return id
+        
 
 # Update steering_angle if we deviate from the center localization_state. Lane_boundaries is a vector of the current segment's lane boundaries. 
 function callibrate_lane_middle(steering_angle, curr_x, curr_y, lane_boundaries, epsilon)
