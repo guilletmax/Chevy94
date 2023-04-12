@@ -169,40 +169,20 @@ function find_line_equation(coord1, coord2)
 end
 
 """
-Finds the center coordinates of an implied circle given 2 xy coordiniates of points on the circumference and the circle's radius
+Finds the center coordinates of an implied circle given 2 xy coordiniates of points on the circumference and the circle's radius. 
 """
-function find_circle_center(x1, y1, x2, y2, radius)
-    # Find the midpoint of the line segment connecting the two points
-    mid_x = (x1 + x2) / 2
-    mid_y = (y1 + y2) / 2
+function find_circle_center(x1, y1, x2, y2, r)
+    q = sqrt((x2-x1)^2 + (y2-y1)^2)
+    y3 = (y1+y2)/2
+    x3 = (x1+x2)/2
 
-    # Find the distance between the two points
-    distance = sqrt((x2 - x1)^2 + (y2 - y1)^2)
+    # There are 2 possible circles to go through 2 points. We will need to figure out how to choose which one we want
+    xC1 = x3 + sqrt(r^2-(q/2)^2)*(y1-y2)/q 
+    yC1 = y3 + sqrt(r^2-(q/2)^2)*(x2-x1)/q
+    xC2 = x3 - sqrt(r^2-(q/2)^2)*(y1-y2)/q
+    yC2 = y3 - sqrt(r^2-(q/2)^2)*(x2-x1)/q 
 
-    # Calculate the distance from the midpoint to the center of the circle
-    circle_distance = sqrt(radius^2 - (distance / 2)^2)
-
-    # Find the slope of the line connecting the two points
-    if y2 - y1 == 0
-        slope = 0
-    else
-        slope = (x2 - x1) / (y2 - y1)
-    end
-
-    # Find the x and y coordinates of the center of the circle
-    if slope == 0
-        center_x = mid_x
-        center_y = mid_y + circle_distance
-    elseif isinf(slope)
-        center_x = mid_x + circle_distance
-        center_y = mid_y
-    else
-        perp_slope = -1 / slope
-        center_x = mid_x + circle_distance / sqrt(1 + perp_slope^2)
-        center_y = mid_y + perp_slope * (center_x - mid_x)
-    end
-
-    return center_x, center_y
+    return xC1, yC1, xC2, yC2
 end
 
 """
