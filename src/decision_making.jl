@@ -1,4 +1,8 @@
 
+const CROSSED_CONFIRMED_COUNT = 10
+const v_step = 1.0
+const s_step = .314
+    
 """
 @KEV DO COMMENTS BRUH
 """
@@ -8,10 +12,6 @@ function decision_making(localization_state_channel,
         target_road_segment_id, 
         socket)
   
-    const CROSSED_CONFIRMED_COUNT = 10
-    const v_step = 1.0
-    const s_step = .314
-    
     curr_seg =  get_current_segment(fetch(localization_state_channel))
     path = get_path(map, curr_seg, target_road_segment_id)
     next_path_index = 2
@@ -27,6 +27,7 @@ function decision_making(localization_state_channel,
             target_velocity = 0.0
             steering_angle = 0.0
             @info "Terminating Chevy94."
+		end
         
         x = fetch(localization_state_channel)
         latest_perception_state = fetch(perception_state_channel)
@@ -38,12 +39,14 @@ function decision_making(localization_state_channel,
                 curr_seg = path[next_path_index]
                 next_path_index+= 1
                 crossed_segment_count = 0
+			end
+		end
         
         update_steering_angle(steering_angle, x[1], x[2], curr_seg.lane_boundaries, epsilon)
 
         update_speed(target_speed, curr_seg.speed_limit)
 
-        cmd = VehicleCommand(steering_angle, target_velocity)
+        cmd = VehicleCommand(steering_angle, target_velocity, true)
         serialize(socket, cmd)
     end
 
@@ -56,7 +59,7 @@ function get_segment_from_localization(x, y, map)
     for segment in map
         land_boundaries1 = segment.lane_boundaries[1]
         land_boundaries2 = segment.lane_boundaries[2]
-        if(segment.curvature == 0)# if straight segment
+        if (segment.curvature == 0) # if straight segment
             m1, b1 = find_line_equation(land_boundaries1.pt_a, land_boundaries1.pt_b) # lane boundary 1
             m2, b2 = find_line_equation(land_boundaries2.pt_a, land_boundaries2.pt_b) # lane boundary 2
             m3, b3 = find_line_equation(land_boundaries1.pt_a[1], land_boundaries2.pt_a[1], land_boundaries2.pt_a[2], land_boundaries1.pt_a[2]) # start boundary
@@ -110,6 +113,7 @@ function update_steering_angle(steering_angle, curr_x, curr_y, lane_boundaries, 
             steering_angle-= s_step
         elseif(curr_y > curr_x*m + b + epsilon) # If to the right of the center line
             steering_anglea+= s_step
+		end
     end
 end
 
