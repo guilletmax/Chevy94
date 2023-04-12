@@ -15,25 +15,35 @@ end
 function autonomous_client(host::IPAddr=IPv4(0), port=4444)
     @info "hi"
     socket = Sockets.connect(host, port)
-    map_segments = training_map()
+    @info "wassup"
+    map = training_map()
 
     gps_channel = Channel{GPSMeasurement}(32)
     imu_channel = Channel{IMUMeasurement}(32)
     cam_channel = Channel{CameraMeasurement}(32)
     gt_channel = Channel{GroundTruthMeasurement}(32)
+    @info "here"
 
-    localization_state_channel = Channel{LocalizationType}(1)
+    #localization_state_channel = Channel{LocalizationType}(1)
     perception_state_channel = Channel{PerceptionType}(1)
-
+    @info "sup"
     target_map_segment = 0 # (not a valid segment, will be overwritten by message)
     ego_vehicle_id = 0 # (not a valid id, will be overwritten by message. This is used for discerning ground-truth messages)
 
-    @info "hey"
+    msg = deserialize(socket)
+    @info msg
+
     @async while isopen(socket)
-        measurement_msg = deserialize(socket)
-        target_map_segment = measurement_msg.target_segment
-        ego_vehicle_id = measurement_msg.vehicle_id
-        for meas in measurement_msg.measurements
+        sleep(0.001)
+        state_msg = deserialize(socket)
+        measurements = state_msg.measurements
+        target_map_segment = state_msg.target_segment
+        ego_vehicle_id = state_msg.vehicle_id
+
+        @info target_map_segment
+        @info ego_vehicle_id
+
+        for meas in measurements
             if meas isa GPSMeasurement
                 !isfull(gps_channel) && put!(gps_channel, meas)
             elseif meas isa IMUMeasurement

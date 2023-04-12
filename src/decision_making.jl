@@ -12,36 +12,58 @@ function decision_making(localization_state_channel,
         target_road_segment_id, 
         socket)
   
-    x = fetch(localization_state_channel)
-    curr_seg =  get_segment_from_localization(x[1], x[2], map)
-    path = get_path(map, curr_seg, target_road_segment_id)
+    # x = fetch(localization_state_channel)
+    # curr_seg =  get_segment_from_localization(x[1], x[2], map)
+    # path = get_path(map, curr_seg, target_road_segment_id)
+    # next_path_index = 2
+    # steering_angle = 0.0
+    # epsilon = 0.1
+    # target_speed = 0.0
+    # crossed_segment_count = 0
+
+
+    curr_seg = 1
+    path = []
     next_path_index = 2
     steering_angle = 0.0
     epsilon = 0.1
     target_speed = 0.0
     crossed_segment_count = 0
 
-    @info "Press 'q' at anytime stop Chevy94."
+    # @info "Press 'q' at anytime stop Chevy94."
     while isopen(socket)
-        key = get_c()
-        if key == 'q'
-            target_speed = 0.0
-            steering_angle = 0.0
-            @info "Terminating Chevy94."
-		end
+        # key = get_c()
+        # if key == 'q'
+        #     target_speed = 0.0
+        #     steering_angle = 0.0
+        #     @info "Terminating Chevy94."
+		# end
         
-        x = fetch(localization_state_channel)
-        latest_perception_state = fetch(perception_state_channel)
+        #x, latest_perception_state = nothing, nothing
+        x = []
+        state_recieved = false
+        # perception_recieved = false
 
-        if (get_segment_from_localization(x[1], x[2], map) != curr_seg)
-            if (crossed_segment_count < CROSSED_CONFIRMED_COUNT)
-                crossed_segment_count+=1
-            else
-                curr_seg = path[next_path_index]
-                next_path_index+= 1
-                crossed_segment_count = 0
-			end
-		end
+        if (isready(localization_state_channel))
+            x = fetch(localization_state_channel)
+            state_recieved = true
+            @info x
+        end
+        
+        # if (isready(perception_state_channel))
+        #     latest_perception_state = fetch(perception_state_channel)
+        #     perception_recieved = true
+        #end
+
+        # if (get_segment_from_localization(x[1], x[2], map) != curr_seg)
+        #     if (crossed_segment_count < CROSSED_CONFIRMED_COUNT)
+        #         crossed_segment_count+=1
+        #     else
+        #         curr_seg = path[next_path_index]
+        #         next_path_index+= 1
+        #         crossed_segment_count = 0
+		# 	end
+		# end
         
         steering_angle = .314
         target_speed = 3.0

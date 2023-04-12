@@ -1,0 +1,10 @@
+julia --project --threads=auto
+]
+instantiate
+add https://github.com/forrestlaine/MeshCat.jl
+add https://github.com/forrestlaine/RigidBodyDynamics.jl
+bkspce
+using VehicleSim
+s = server();
+using Sockets
+autonomous_client(ip"
