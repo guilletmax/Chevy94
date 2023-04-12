@@ -85,13 +85,6 @@ function decision_making(localization_state_channel,
 
 end
 
-function P(map)
-    for (id, segment) in map
-        print(segment.lane_boundaries)
-        print("\n")
-    end
-end
-
 """
 Get segment ID from localization x and y state and map
 """
@@ -130,7 +123,7 @@ function get_steering_angle(steering_angle, curr_x, curr_y, lane_boundaries, eps
     edge1_coord_end = lane_boundaries[1].pt_b
     edge2_coord_start = lane_boundaries[2].pt_a
     edge2_coord_end = lane_boundaries[2].pt_b
-    lane_curve = lane_boundaries[1].curvature != 0 # 0 if straight, otherwise curved. True if curved, false if straight
+    lane_curve = lane_boundaries[1].curvature != 0 # True if curved, false if straight, 0 if straight, negative if curve right, positive if curve left. 
 
     # middle_coord_start and middle_coord_end are the end points of the line/curve that is the middle of the lane
     middle_coord_start = [edge1_coord_start[1] - edge2_coord_start[1], edge1_coord_start[2] - edge2_coord_start[2]]
