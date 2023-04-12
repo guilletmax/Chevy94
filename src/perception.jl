@@ -261,10 +261,10 @@ function perception(cam_meas_channel, localization_state_channel, perception_sta
         latest_localization_state = fetch(localization_state_channel)
         @info "Latest localization (gt) state: $latest_localization_state"
 
-        #perception_state = perception_filter(latest_localization_state)
-        #if isready(perception_state_channel)
-        #    take!(perception_state_channel)
-        #end
-        #put!(perception_state_channel, perception_state)
+        perception_state = perception_filter(latest_localization_state)
+        if isready(perception_state_channel)
+            take!(perception_state_channel)
+        end
+        put!(perception_state_channel, perception_state)
     end
 end
