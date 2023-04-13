@@ -31,27 +31,26 @@ function decision_making(localization_state_channel,
             @info curr_segments
 
             """TODO"""
-            # STEP 2 -> fix get_path - STATUS: for me, going from seg 32 (starting segment of car) -> seg 44 (random target segment) results in julia program stalling indefinitley.
-            @info curr_segments[1]
-            @info target_road_segment_id
-            best_path = get_path(map, curr_segments[1], target_road_segment_id)
-            @info best_path
-            min_dist = length(best_path)
+            # STEP 2 -> fix get_path - STATUS: L
+            @info "ENTERING SHORTEST PATH"
+            shortest_path = shortest_path_bfs(map, curr_segments[1].id, target_road_segment_id)
+            @info shortest_path
+            min_dist = length(shortest_path)
             @info min_dist
             for i in eachindex(curr_segments[2:end])
                 @info i
-                new_path = get_path(map, curr_segments[i], target_road_segment_id)
+                new_path = shortest_path_bfs(map, curr_segments[1].id, target_road_segment_id)
                 @info new_path
                 new_dist = lenth(new_path)
                 @info new_dist
                 if new_dist < min_dist
-                    best_path = new_dist
+                    shortest_path = new_path
                     min_dist = new_dist
                 end
             end
 
-            @info best_path
-            path = best_path
+            @info shortest_path
+            path = shortest_path
             is_setup = true
         end
     end
@@ -114,7 +113,6 @@ function get_segments_from_localization(x, y, map)
     @info y
     @info map
     for (id, segment) in map
-        @info id
         @info segment
         lane_boundaries_left = segment.lane_boundaries[1]
         lane_boundaries_right = segment.lane_boundaries[2]
@@ -142,12 +140,12 @@ function get_segments_from_localization(x, y, map)
             if (inside_left_boundary && inside_right_boundary && inside_start_boundary && inside_end_boundary) # if within both boundaries
                 @info "found segment"
                 if (is_intersection)
-                    push!([id, segment], segments)
+                    push!([segment], segments)
                     @info "adding to segments:"
                     @info segments
                 else
                     @info "returning"
-                    return [[id, segment]]
+                    return [segment]
                 end
             end
         else
@@ -197,12 +195,12 @@ function get_segments_from_localization(x, y, map)
             if (inside_curves && inside_start_boundary && inside_end_boundary)
                 @info "segment found"
                 if (is_intersection)
-                    push!([id, segment], segments)
+                    push!([segment], segments)
                     @info "adding to segments:"
                     @info segments
                 else
                     @info "returning"
-                    return [[id, segment]]
+                    return [segment]
                 end
             end
         end
@@ -293,51 +291,53 @@ function get_target_speed(target_speed, speed_limit)
 end
 
 """
-Returns a sequence of segments to go through to get from start_seg to end_seg. Runs djikstra's algorithm
-Map is an object --> map::Dict{Int, RoadSegment}, start_seg and end_seg are integers representing the ID's
+TBD
 """
-function get_path(map, start_seg, end_seg)
-    path = []
+# function shortest_path(start_segment, end_segment)
 
-    n = length(map)
-    dist = fill(typemax(Int), n)
-    prev = fill(0, n)
-    visited = falses(n)
+# end
 
-    dist[start_seg] = 0
+function shortest_path_bfs(graph, start::Any, goal::Any)
+    # initialize the visited set and the queue
+    visited = Set()
+    queue = Deque{Any}(10)
 
-    while true
-        # Find the unvisited vertex with the smallest distance
-        u = -1
-        mindist = typemax(Int)
-        for v in keys(map)
-            if !visited[v] && dist[v] < mindist
-                u = v
-                mindist = dist[v]
-            end
+    # add the initial path to the queue
+    push!(queue, [start])
+
+    # loop through the queue until it's empty
+    while !isempty(queue)
+        # get the first path from the queue
+        path = popfirst!(queue)
+
+        # get the last node from the path
+        node = last(path)
+
+        # check if we've reached the goal
+        if node == goal
+            return path
         end
 
-        if u == -1 || u == end_seg
-            # All vertices have been visited or we have reached the end_seg
-            break
-        end
+        # check if we've already visited this node
+        if !(node in visited)
+            # mark the node as visited
+            push!(visited, node)
 
-        visited[u] = true
+            # get the children of the current node
+            children = graph[node].children
 
-        # Update the distances to the neighbors of the current vertex
-        for v in map[u].children
-            alt = dist[u] + 1 # All road weights are the same
-            if alt < dist[v]
-                dist[v] = alt
-                prev[v] = u
+            # loop through the children of the current node
+            for child in children
+                # create a new path by appending the child to the current path
+                new_path = copy(path)
+                push!(new_path, child)
+
+                # add the new path to the queue
+                push!(queue, new_path)
             end
         end
     end
 
-    # Build the sequence of road segments from the start to the end_seg
-    path = [end_seg]
-    while path[end] != start_seg
-        push!(path, prev[path[end]])
-    end
-    return reverse(path)
+    # if we reach this point, there is no path from start to goal
+    return nothing
 end
