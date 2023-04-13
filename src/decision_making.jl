@@ -90,8 +90,8 @@ function decision_making(localization_state_channel,
 
         """TODO"""
         # STEP 5 -> fix get_steering_angle, note* we want to return the new steering angle from the function and set it here
-        # controls.steering_angle = get_steering_angle(controls.steering_angle, x[1], x[2], curr_seg.lane_boundaries, epsilon)
-        controls.steering_angle = 0.314 #comment me out when ready
+        controls.steering_angle = get_steering_angle(controls.steering_angle, x[1], x[2], curr_seg.lane_boundaries, epsilon)
+        #controls.steering_angle = 0.314 #comment me out when ready
 
         """TODO"""
         # STEP 6 -> fix get_target_speed, note* we want to return the new speed from the function and set it here
@@ -150,35 +150,28 @@ function get_segments_from_localization(x, y, map)
             end
         else
             @info "is curved"
-            left_r = abs(1 / lane_boundaries_left.curvature)
-            right_r = abs(1 / lane_boundaries_right.curvature)
-            @info left_r
-            @info right_r
+    		left_r = abs(1 / lane_boundaries_left.curvature)
+    		right_r = abs(1 / lane_boundaries_right.curvature)
 
-            big_radius = -1.0
-            small_radius = -1.0
+    		big_radius = -1.0
+    		small_radius = -1.0
 
-            if left_r < right_r
-                small_center_one, small_center_two = find_circle_center(lane_boundaries_left.pt_a, lane_boundaries_left.pt_b, left_r)
-                big_radius = right_r
-                small_radius = left_r
-                @info "left turn"
-                @info "small_radius"
-                @info "big_radius"
-            else
-                small_center_one, small_center_two = find_circle_center(lane_boundaries_right.pt_a, lane_boundaries_right.pt_b, right_r)
-                big_radius = left_r
-                small_radius = right_r
-                @info "right turn"
-                @info "small_radius"
-                @info "big_radius"
-            end
-
-            if norm([x; y] - small_center_one) < norm([x; y] - small_center_two)
-                circle_center = small_center_two
-            else
-                circle_center = small_center_one
-            end
+    		if left_r < right_r
+    		    small_center_one, small_center_two = find_circle_center(lane_boundaries_left.pt_a, lane_boundaries_left.pt_b, left_r)
+    		    big_radius = right_r
+    		    small_radius = left_r
+    		else
+    		    small_center_one, small_center_two = find_circle_center(lane_boundaries_right.pt_a, lane_boundaries_right.pt_b, right_r)
+    		    big_radius = left_r
+    		    small_radius = right_r
+    		end
+			
+			circle_center = [0, 0] 
+    		if norm([x; y] - small_center_one) < norm([x; y] - small_center_two)
+    		    circle_center = small_center_two
+    		else
+    		    circle_center = small_center_one
+    		end
 
             dist_to_center = norm([x; y] - circle_center)
             inside_curves = dist_to_center >= small_radius && dist_to_center <= big_radius
@@ -210,39 +203,96 @@ function get_segments_from_localization(x, y, map)
     return segments
 end
 
+function get_circle_center(lane_boundaries_left, lane_boundaries_right)
+    left_r = abs(1 / lane_boundaries_left.curvature)
+    right_r = abs(1 / lane_boundaries_right.curvature)
+
+    big_radius = -1.0
+    small_radius = -1.0
+
+    if left_r < right_r
+        small_center_one, small_center_two = find_circle_center(lane_boundaries_left.pt_a, lane_boundaries_left.pt_b, left_r)
+        big_radius = right_r
+        small_radius = left_r
+    else
+        small_center_one, small_center_two = find_circle_center(lane_boundaries_right.pt_a, lane_boundaries_right.pt_b, right_r)
+        big_radius = left_r
+        small_radius = right_r
+    end
+	
+	circle_center = [0, 0] 
+    if norm([x; y] - small_center_one) < norm([x; y] - small_center_two)
+        circle_center = small_center_two
+    else
+        circle_center = small_center_one
+    end
+
+	circle_center
+end
+
 """
 Update steering_angle if we deviate from the center localization_state. Lane_boundaries is a vector of the current segment's lane boundaries. 
 """
 function get_steering_angle(steering_angle, curr_x, curr_y, lane_boundaries, epsilon)
-    edge1_coord_start = lane_boundaries[1].pt_a
-    edge1_coord_end = lane_boundaries[1].pt_b
-    edge2_coord_start = lane_boundaries[2].pt_a
-    edge2_coord_end = lane_boundaries[2].pt_b
     lane_curve = lane_boundaries[1].curvature != 0 # True if curved, false if straight, 0 if straight, negative if curve right, positive if curve left. 
+	@info "in function"
 
-    # middle_coord_start and middle_coord_end are the end points of the line/curve that is the middle of the lane
-    middle_coord_start = [edge1_coord_start[1] - edge2_coord_start[1], edge1_coord_start[2] - edge2_coord_start[2]]
-    middle_coord_end = [edge1_coord_end[1] - edge2_coord_end[1], edge1_coord_end[2] - edge2_coord_end[2]]
-    middle_curvature = (abs(abs(lane_boundaries[1].curvature) - abs(lane_boundaries[2].curvature)) / 2) + min(abs(lane_boundaries[1].curvature), abs(lane_boundaries[2].curvature))
+	if !lane_curve
+	@info "not curved"
+   		normal_vector = lane_boundaries_right.pt_a - lane_boundaries_left.pt_a
+		center_point = (lane_boundaries_left.pt_a + lane_boundaries_right.pt_a) / 2
+		@info "normal vec: $normal_vector"
+		@info "center point: $center_point"
+    	a = dot(left_normal_vector, [x; y])
+		b = dot(normal_vector, center_point)
+		@info "dot products: $a and $b"
+		if a > b
+			@info "We should turn left"
+			# turn left
+			return 0.314
+		elseif a < b
+			@info "We should turn right"
+			# turn right
+			return -0.314
+		end
+	else
+        left_r = abs(1 / lane_boundaries_left.curvature)
+        right_r = abs(1 / lane_boundaries_right.curvature)
 
-    if (lane_curve) # If lane is curved
-        # x_shift and y_shift are the x and y coordinates of the center of the circle
-        x_shift, y_shift = find_circle_center(middle_coord_end[1], middle_coord_end[2], middle_coord_start[1], middle_coord_start[2], 1 / abs(middle_curvature))
+		big_radius = -1.0
+   		small_radius = -1.0
 
-        # All circles have form (x-a)^2+(y-b)^2 = r^2
-        if ((curr_x - x_shift)^2 + (curr_y - y_shift)^2 < (1 / middle_curvature)^2) # if we are too close to the inside border
-            return steering_angle - s_step
-        elseif ((curr_x - x_shift)^2 + (curr_y - y_shift)^2 > (1 / middle_curvature)^2) # if we are too close to the outside border
-            return steering_angle + s_step
-        end
-    else # If lane is straight
-        m, b = find_line_equation(middle_coord_start, middle_coord_end)
-        if (curr_y < curr_x * m + b - epsilon) # If to the left of the center line
-            return steering_angle - s_step
-        elseif (curr_y > curr_x * m + b + epsilon) # If to the right of the center line
-            return steering_anglea + s_step
-        end
-    end
+   		if left_r < right_r
+   			small_center_one, small_center_two = find_circle_center(lane_boundaries_left.pt_a, lane_boundaries_left.pt_b, left_r)
+   		    big_radius = right_r
+   		    small_radius = left_r
+   		else
+   		    small_center_one, small_center_two = find_circle_center(lane_boundaries_right.pt_a, lane_boundaries_right.pt_b, right_r)
+   		    big_radius = left_r
+   		    small_radius = right_r
+   		end
+   		 
+   		circle_center = [0, 0] 
+   		if norm([x; y] - small_center_one) < norm([x; y] - small_center_two)
+   		    circle_center = small_center_two
+   		else
+   		    circle_center = small_center_one
+   		end
+		@info circle_center
+
+		lane_center_radius = (left_r + right_r) / 2
+
+        dist_to_center = norm([x; y] - circle_center)
+        closer_to_inner_curve = dist_to_center <= lane_center_radius 
+
+		if closer_to_inner_curve
+			if lane_boundaries[1].curvature < 0
+				return -0.314
+			elseif lane_boundaries[1].curvature > 0
+				return 0.314
+			end
+		end
+	end
 end
 
 """
