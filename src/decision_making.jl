@@ -90,14 +90,17 @@ Get segment ID from localization x and y state and map
 """
 function get_segment_from_localization(x, y, map)
     for (id, segment) in map
-        land_boundaries1 = segment.lane_boundaries[1]
-        land_boundaries2 = segment.lane_boundaries[2]
+
+        # 
+
+        lane_boundaries_left = segment.lane_boundaries[1]
+        lane_boundaries_right = segment.lane_boundaries[2]
         if (segment.lane_boundaries[1].curvature == 0) # if straight segment
-            m1, b1 = find_line_equation(land_boundaries1.pt_a, land_boundaries1.pt_b) # lane boundary 1
-            m2, b2 = find_line_equation(land_boundaries2.pt_a, land_boundaries2.pt_b) # lane boundary 2
-            m3, b3 = find_line_equation([land_boundaries1.pt_a[1], land_boundaries2.pt_a[1]], [land_boundaries2.pt_a[2], land_boundaries1.pt_a[2]]) # start boundary
-            m4, b4 = find_line_equation([land_boundaries1.pt_b[1], land_boundaries2.pt_b[1]], [land_boundaries2.pt_b[2], land_boundaries1.pt_b[2]]) # end boundary
-            if (m1 * x + b1 < y && m2 * x + b2 > y && m3 * x + b3 < y && m4 * x + b4 > y) # if within both boundaries
+            m_left, b_left = find_line_equation(lane_boundaries_left.pt_a, lane_boundaries_left.pt_b) # lane boundary 1
+            m_right, b_right = find_line_equation(lane_boundaries_right.pt_a, lane_boundaries_right.pt_b) # lane boundary 2
+            m_start, b_start = find_line_equation(lane_boundaries_left.pt_a, lane_boundaries_right.pt_a) # start boundary
+            m_end, b_end = find_line_equation(lane_boundaries_left.pt_b, lane_boundaries_right.pt_b) # end boundary
+            if (m_left * x + b_left < y && m_right * x + b_right > y && m_start * x + b_start < y && m_end * x + b_end > y) # if within both boundaries
                 return id, segment
             end
         else # if curved segment
@@ -172,15 +175,15 @@ end
 Finds the center coordinates of an implied circle given 2 xy coordiniates of points on the circumference and the circle's radius. 
 """
 function find_circle_center(x1, y1, x2, y2, r)
-    q = sqrt((x2-x1)^2 + (y2-y1)^2)
-    y3 = (y1+y2)/2
-    x3 = (x1+x2)/2
+    q = sqrt((x2 - x1)^2 + (y2 - y1)^2)
+    y3 = (y1 + y2) / 2
+    x3 = (x1 + x2) / 2
 
     # There are 2 possible circles to go through 2 points. We will need to figure out how to choose which one we want
-    xC1 = x3 + sqrt(r^2-(q/2)^2)*(y1-y2)/q 
-    yC1 = y3 + sqrt(r^2-(q/2)^2)*(x2-x1)/q
-    xC2 = x3 - sqrt(r^2-(q/2)^2)*(y1-y2)/q
-    yC2 = y3 - sqrt(r^2-(q/2)^2)*(x2-x1)/q 
+    xC1 = x3 + sqrt(r^2 - (q / 2)^2) * (y1 - y2) / q
+    yC1 = y3 + sqrt(r^2 - (q / 2)^2) * (x2 - x1) / q
+    xC2 = x3 - sqrt(r^2 - (q / 2)^2) * (y1 - y2) / q
+    yC2 = y3 - sqrt(r^2 - (q / 2)^2) * (x2 - x1) / q
 
     return xC1, yC1, xC2, yC2
 end
