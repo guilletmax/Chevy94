@@ -15,7 +15,8 @@ function decision_making(localization_state_channel,
     """REMOVE ME EVENTUALLY"""
     target_road_segment_id = 44
 
-    curr_segments = []
+
+    curr_segment = -1
     path = []
 
     is_setup = false
@@ -23,37 +24,36 @@ function decision_making(localization_state_channel,
         sleep(0.001)
         if (isready(localization_state_channel))
             x = fetch(localization_state_channel)
-            @info x
 
             """TODO"""
             # STEP 1 -> fix get_segments_from_localization - maybe fixed! could produce bugs once we get the car moving though.
             curr_segments = get_segments_from_localization(x.position[1], x.position[2], map)
-            @info curr_segments
+            curr_segment = curr_segments[1]
 
             """TODO"""
-            # STEP 2 -> fix get_path - STATUS: L
-            @info "ENTERING SHORTEST PATH"
+            # STEP 2 -> fix get_path - maybe fixed!
             shortest_path = shortest_path_bfs(map, curr_segments[1].id, target_road_segment_id)
-            @info shortest_path
             min_dist = length(shortest_path)
-            @info min_dist
             for i in eachindex(curr_segments[2:end])
-                @info i
                 new_path = shortest_path_bfs(map, curr_segments[1].id, target_road_segment_id)
-                @info new_path
                 new_dist = lenth(new_path)
-                @info new_dist
                 if new_dist < min_dist
                     shortest_path = new_path
                     min_dist = new_dist
+                    curr_segment = curr_segments[i]
                 end
             end
 
-            @info shortest_path
             path = shortest_path
             is_setup = true
         end
     end
+
+    @info x.position[1]
+    @info x.position[2]
+    @info curr_segment
+    @info path
+    @info "done with setup"
 
     next_path_index = 2
     epsilon = 0.1
@@ -109,52 +109,31 @@ end
 Get segment ID from localization x and y state and map
 """
 function get_segments_from_localization(x, y, map)
-    @info x
-    @info y
-    @info map
     for (id, segment) in map
-        @info segment
         lane_boundaries_left = segment.lane_boundaries[1]
         lane_boundaries_right = segment.lane_boundaries[2]
-        @info lane_boundaries_left
-        @info lane_boundaries_right
-        @info segment.lane_types
         is_intersection = intersection in segment.lane_types
-        @info is_intersection
         segments = []
 
         if (segment.lane_boundaries[1].curvature == 0)
-            @info "is straight"
             left_normal_vector = lane_boundaries_right.pt_a - lane_boundaries_left.pt_a
             inside_left_boundary = dot(left_normal_vector, [x; y]) >= dot(left_normal_vector, lane_boundaries_left.pt_a)
-            @info inside_left_boundary
             right_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_right.pt_a
             inside_right_boundary = dot(right_normal_vector, [x; y]) >= dot(right_normal_vector, lane_boundaries_right.pt_a)
-            @info inside_right_boundary
             start_normal_vector = lane_boundaries_left.pt_b - lane_boundaries_left.pt_a
             inside_start_boundary = dot(start_normal_vector, [x; y]) >= dot(start_normal_vector, lane_boundaries_left.pt_a)
-            @info inside_start_boundary
             end_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_left.pt_b
             inside_end_boundary = dot(end_normal_vector, [x; y]) >= dot(end_normal_vector, lane_boundaries_left.pt_b)
-            @info inside_end_boundary
-            if (inside_left_boundary && inside_right_boundary && inside_start_boundary && inside_end_boundary) # if within both boundaries
-                @info "found segment"
+            if (inside_left_boundary && inside_right_boundary && inside_start_boundary && inside_end_boundary)
                 if (is_intersection)
                     push!([segment], segments)
-                    @info "adding to segments:"
-                    @info segments
                 else
-                    @info "returning"
                     return [segment]
                 end
             end
         else
-            @info "is curved"
             left_r = abs(1 / lane_boundaries_left.curvature)
             right_r = abs(1 / lane_boundaries_right.curvature)
-            @info left_r
-            @info right_r
-
             big_radius = -1.0
             small_radius = -1.0
 
@@ -162,16 +141,10 @@ function get_segments_from_localization(x, y, map)
                 small_center_one, small_center_two = find_circle_center(lane_boundaries_left.pt_a, lane_boundaries_left.pt_b, left_r)
                 big_radius = right_r
                 small_radius = left_r
-                @info "left turn"
-                @info "small_radius"
-                @info "big_radius"
             else
                 small_center_one, small_center_two = find_circle_center(lane_boundaries_right.pt_a, lane_boundaries_right.pt_b, right_r)
                 big_radius = left_r
                 small_radius = right_r
-                @info "right turn"
-                @info "small_radius"
-                @info "big_radius"
             end
 
             if norm([x; y] - small_center_one) < norm([x; y] - small_center_two)
@@ -182,31 +155,22 @@ function get_segments_from_localization(x, y, map)
 
             dist_to_center = norm([x; y] - circle_center)
             inside_curves = dist_to_center >= small_radius && dist_to_center <= big_radius
-            @info inside_curves
 
             start_normal_vector = lane_boundaries_left.pt_b - lane_boundaries_left.pt_a
             inside_start_boundary = dot(start_normal_vector, [x; y]) >= dot(start_normal_vector, lane_boundaries_left.pt_a)
-            @info inside_start_boundary
 
             end_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_left.pt_b
             inside_end_boundary = dot(end_normal_vector, [x; y]) >= dot(end_normal_vector, lane_boundaries_left.pt_b)
-            @info inside_end_boundary
 
             if (inside_curves && inside_start_boundary && inside_end_boundary)
-                @info "segment found"
                 if (is_intersection)
                     push!([segment], segments)
-                    @info "adding to segments:"
-                    @info segments
                 else
-                    @info "returning"
                     return [segment]
                 end
             end
         end
     end
-    @info "for loop complete:"
-    @info "segments"
     return segments
 end
 
@@ -291,42 +255,39 @@ function get_target_speed(target_speed, speed_limit)
 end
 
 """
-TBD
+Find shortest path from start_segment_id to end_segment_id
 """
 # function shortest_path(start_segment, end_segment)
-
-# end
-
-function shortest_path_bfs(graph, start::Any, goal::Any)
+function shortest_path_bfs(map, start_segment_id, end_segment_id)
     # initialize the visited set and the queue
     visited = Set()
     queue = Deque{Any}(10)
 
     # add the initial path to the queue
-    push!(queue, [start])
+    push!(queue, [start_segment_id])
 
     # loop through the queue until it's empty
     while !isempty(queue)
         # get the first path from the queue
         path = popfirst!(queue)
 
-        # get the last node from the path
-        node = last(path)
+        # get the last segment id from the path
+        curr_segment_id = last(path)
 
         # check if we've reached the goal
-        if node == goal
+        if curr_segment_id == end_segment_id
             return path
         end
 
-        # check if we've already visited this node
-        if !(node in visited)
-            # mark the node as visited
-            push!(visited, node)
+        # check if we've already visited this segment
+        if !(curr_segment_id in visited)
+            # mark the segment as visited
+            push!(visited, curr_segment_id)
 
-            # get the children of the current node
-            children = graph[node].children
+            # get the children of the current segment
+            children = map[curr_segment_id].children
 
-            # loop through the children of the current node
+            # loop through the children of the current segment
             for child in children
                 # create a new path by appending the child to the current path
                 new_path = copy(path)
@@ -341,3 +302,6 @@ function shortest_path_bfs(graph, start::Any, goal::Any)
     # if we reach this point, there is no path from start to goal
     return nothing
 end
+# end
+
+
