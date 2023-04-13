@@ -12,7 +12,10 @@ function decision_making(localization_state_channel,
     socket,
     controls)
 
-    curr_segment = 0
+    """REMOVE ME EVENTUALLY"""
+    target_road_segment_id = 44
+
+    curr_segments = []
     path = []
 
     is_setup = false
@@ -23,14 +26,32 @@ function decision_making(localization_state_channel,
             @info x
 
             """TODO"""
-            # STEP 1 -> fix get_segment_from_localization -> currently just goes forever I think --> no, the problem is that x is always an empty array so x[1] errors
-            # curr_seg = get_segment_from_localization(x[1], x[2], map)
+            # STEP 1 -> fix get_segments_from_localization - maybe fixed! could produce bugs once we get the car moving though.
+            curr_segments = get_segments_from_localization(x.position[1], x.position[2], map)
+            @info curr_segments
 
             """TODO"""
-            # STEP 2 -> fix get_path
-            #path = get_path(map, curr_seg, target_road_segment_id)
-            #@info path
+            # STEP 2 -> fix get_path - STATUS: for me, going from seg 32 (starting segment of car) -> seg 44 (random target segment) results in julia program stalling indefinitley.
+            @info curr_segments[1]
+            @info target_road_segment_id
+            best_path = get_path(map, curr_segments[1], target_road_segment_id)
+            @info best_path
+            min_dist = length(best_path)
+            @info min_dist
+            for i in eachindex(curr_segments[2:end])
+                @info i
+                new_path = get_path(map, curr_segments[i], target_road_segment_id)
+                @info new_path
+                new_dist = lenth(new_path)
+                @info new_dist
+                if new_dist < min_dist
+                    best_path = new_dist
+                    min_dist = new_dist
+                end
+            end
 
+            @info best_path
+            path = best_path
             is_setup = true
         end
     end
@@ -88,70 +109,107 @@ end
 """
 Get segment ID from localization x and y state and map
 """
-function get_segment_from_localization(x, y, map)
+function get_segments_from_localization(x, y, map)
+    @info x
+    @info y
+    @info map
     for (id, segment) in map
-
+        @info id
+        @info segment
         lane_boundaries_left = segment.lane_boundaries[1]
         lane_boundaries_right = segment.lane_boundaries[2]
-        if (segment.lane_boundaries[1].curvature == 0) # if straight segment
+        @info lane_boundaries_left
+        @info lane_boundaries_right
+        @info segment.lane_types
+        is_intersection = intersection in segment.lane_types
+        @info is_intersection
+        segments = []
 
-			left_normal_vector = lane_boundaries_right.pt_a - lane_boundaries_left.pt_a
-			inside_left_boundary = dot(left_normal_vector, [x; y]) >= dot(left_normal_vector, lane_boundaries_left.pt_a)
-
-			right_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_right.pt_a
-			inside_right_boundary = dot(right_normal_vector, [x; y]) >= dot(right_normal_vector, lane_boundaries_right.pt_a)
-
-			start_normal_vector = lane_boundaries_left.pt_b - lane_boundaries_left.pt_a
-			inside_start_boundary = dot(start_normal_vector, [x; y]) >= dot(start_normal_vector, lane_boundaries_left.pt_a)
-
-			end_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_left.pt_b
-			inside_end_boundary = dot(end_normal_vector, [x; y]) >= dot(end_normal_vector, lane_boundaries_left.pt_b)
-
+        if (segment.lane_boundaries[1].curvature == 0)
+            @info "is straight"
+            left_normal_vector = lane_boundaries_right.pt_a - lane_boundaries_left.pt_a
+            inside_left_boundary = dot(left_normal_vector, [x; y]) >= dot(left_normal_vector, lane_boundaries_left.pt_a)
+            @info inside_left_boundary
+            right_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_right.pt_a
+            inside_right_boundary = dot(right_normal_vector, [x; y]) >= dot(right_normal_vector, lane_boundaries_right.pt_a)
+            @info inside_right_boundary
+            start_normal_vector = lane_boundaries_left.pt_b - lane_boundaries_left.pt_a
+            inside_start_boundary = dot(start_normal_vector, [x; y]) >= dot(start_normal_vector, lane_boundaries_left.pt_a)
+            @info inside_start_boundary
+            end_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_left.pt_b
+            inside_end_boundary = dot(end_normal_vector, [x; y]) >= dot(end_normal_vector, lane_boundaries_left.pt_b)
+            @info inside_end_boundary
             if (inside_left_boundary && inside_right_boundary && inside_start_boundary && inside_end_boundary) # if within both boundaries
-                return id, segment
+                @info "found segment"
+                if (is_intersection)
+                    push!([id, segment], segments)
+                    @info "adding to segments:"
+                    @info segments
+                else
+                    @info "returning"
+                    return [[id, segment]]
+                end
             end
-			
-        else # if curved segment
-			turning_right = lane_boundaries_left.curvature < 0
-
+        else
+            @info "is curved"
             left_r = abs(1 / lane_boundaries_left.curvature)
             right_r = abs(1 / lane_boundaries_right.curvature)
+            @info left_r
+            @info right_r
 
-			big_radius = -1.0
-			small_radius = -1.0
+            big_radius = -1.0
+            small_radius = -1.0
 
-			if left_r < right_r
-				small_center_one, small_center_two = find_circle_center(lane_boundaries_left.pt_a, lane_boundaries_left.pt_b, left_r)
-				big_radius = right_r
-				small_radius = left_r
-			else
-				small_center_one, small_center_two = find_circle_center(lane_boundaries_right.pt_a, lane_boundaries_right.pt_b, right_r)
-				big_radius = left_r
-				small_radius = right_r
-			end
+            if left_r < right_r
+                small_center_one, small_center_two = find_circle_center(lane_boundaries_left.pt_a, lane_boundaries_left.pt_b, left_r)
+                big_radius = right_r
+                small_radius = left_r
+                @info "left turn"
+                @info "small_radius"
+                @info "big_radius"
+            else
+                small_center_one, small_center_two = find_circle_center(lane_boundaries_right.pt_a, lane_boundaries_right.pt_b, right_r)
+                big_radius = left_r
+                small_radius = right_r
+                @info "right turn"
+                @info "small_radius"
+                @info "big_radius"
+            end
 
-			if norm([x; y] - small_center_one) < norm([x; y] - small_center_two)
-				circle_center = small_center_two
-			else
-				circle_center = small_center_one
-			end
+            if norm([x; y] - small_center_one) < norm([x; y] - small_center_two)
+                circle_center = small_center_two
+            else
+                circle_center = small_center_one
+            end
 
-			dist_to_center = norm([x; y] - circle_center)
-			inside_curves = dist_to_center >= small_radius && dist_to_center <= big_radius
+            dist_to_center = norm([x; y] - circle_center)
+            inside_curves = dist_to_center >= small_radius && dist_to_center <= big_radius
+            @info inside_curves
 
-			# check front and back
-			start_normal_vector = lane_boundaries_left.pt_b - lane_boundaries_left.pt_a
-			inside_start_boundary = dot(start_normal_vector, [x; y]) >= dot(start_normal_vector, lane_boundaries_left.pt_a)
+            start_normal_vector = lane_boundaries_left.pt_b - lane_boundaries_left.pt_a
+            inside_start_boundary = dot(start_normal_vector, [x; y]) >= dot(start_normal_vector, lane_boundaries_left.pt_a)
+            @info inside_start_boundary
 
-			end_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_left.pt_b
-			inside_end_boundary = dot(end_normal_vector, [x; y]) >= dot(end_normal_vector, lane_boundaries_left.pt_b)
+            end_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_left.pt_b
+            inside_end_boundary = dot(end_normal_vector, [x; y]) >= dot(end_normal_vector, lane_boundaries_left.pt_b)
+            @info inside_end_boundary
 
             if (inside_curves && inside_start_boundary && inside_end_boundary)
-                return id, segment
+                @info "segment found"
+                if (is_intersection)
+                    push!([id, segment], segments)
+                    @info "adding to segments:"
+                    @info segments
+                else
+                    @info "returning"
+                    return [[id, segment]]
+                end
             end
         end
     end
-    return -1 # should never return -1, we should always be within one of the segments
+    @info "for loop complete:"
+    @info "segments"
+    return segments
 end
 
 """
@@ -216,13 +274,13 @@ function find_circle_center(p1, p2, r)
 
     # There are 2 possible circles to go through 2 points. We will need to figure out how to choose which one we want
 
-	center_one = [avg[1] + sqrt(r^2 - (q / 2)^2) * (p1[2] - p2[2]) / q
-   				  avg[2] + sqrt(r^2 - (q / 2)^2) * (p2[1] - p1[1]) / q]
+    center_one = [avg[1] + sqrt(r^2 - (q / 2)^2) * (p1[2] - p2[2]) / q
+        avg[2] + sqrt(r^2 - (q / 2)^2) * (p2[1] - p1[1]) / q]
 
-	center_two = [avg[1] - sqrt(r^2 - (q / 2)^2) * (p1[2] - p2[2]) / q
-				  avg[2] - sqrt(r^2 - (q / 2)^2) * (p2[1] - p1[1]) / q]
+    center_two = [avg[1] - sqrt(r^2 - (q / 2)^2) * (p1[2] - p2[2]) / q
+        avg[2] - sqrt(r^2 - (q / 2)^2) * (p2[1] - p1[1]) / q]
 
-    return center_one, center_two 
+    return center_one, center_two
 end
 
 """
