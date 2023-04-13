@@ -91,27 +91,63 @@ Get segment ID from localization x and y state and map
 function get_segment_from_localization(x, y, map)
     for (id, segment) in map
 
-        # 
-
         lane_boundaries_left = segment.lane_boundaries[1]
         lane_boundaries_right = segment.lane_boundaries[2]
         if (segment.lane_boundaries[1].curvature == 0) # if straight segment
-            m_left, b_left = find_line_equation(lane_boundaries_left.pt_a, lane_boundaries_left.pt_b) # lane boundary 1
-            m_right, b_right = find_line_equation(lane_boundaries_right.pt_a, lane_boundaries_right.pt_b) # lane boundary 2
-            m_start, b_start = find_line_equation(lane_boundaries_left.pt_a, lane_boundaries_right.pt_a) # start boundary
-            m_end, b_end = find_line_equation(lane_boundaries_left.pt_b, lane_boundaries_right.pt_b) # end boundary
-            if (m_left * x + b_left < y && m_right * x + b_right > y && m_start * x + b_start < y && m_end * x + b_end > y) # if within both boundaries
+
+			left_normal_vector = lane_boundaries_right.pt_a - lane_boundaries_left.pt_a
+			inside_left_boundary = dot(left_normal_vector, [x; y]) >= dot(left_normal_vector, lane_boundaries_left.pt_a)
+
+			right_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_right.pt_a
+			inside_right_boundary = dot(right_normal_vector, [x; y]) >= dot(right_normal_vector, lane_boundaries_right.pt_a)
+
+			start_normal_vector = lane_boundaries_left.pt_b - lane_boundaries_left.pt_a
+			inside_start_boundary = dot(start_normal_vector, [x; y]) >= dot(start_normal_vector, lane_boundaries_left.pt_a)
+
+			end_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_left.pt_b
+			inside_end_boundary = dot(end_normal_vector, [x; y]) >= dot(end_normal_vector, lane_boundaries_left.pt_b)
+
+            if (inside_left_boundary && inside_right_boundary && inside_start_boundary && inside_end_boundary) # if within both boundaries
                 return id, segment
             end
+			
         else # if curved segment
-            r1 = 1 / land_boundaries1.curvature
-            r2 = 1 / land_boundaries2.curvature
-            c1, d1 = find_circle_center(land_boundaries1.pt_a[1], land_boundaries1.pt_a[2], land_boundaries1.pt_a[1], land_boundaries1.pt_b[2], r1)
-            c2, d2 = find_circle_center(land_boundaries2.pt_a[1], land_boundaries2.pt_a[2], land_boundaries2.pt_a[1], land_boundaries2.pt_b[2], r2)
-            m3, b3 = find_line_equation([land_boundaries1.pt_a[1], land_boundaries2.pt_a[1]], [land_boundaries2.pt_a[2], land_boundaries1.pt_a[2]]) # start boundary
-            m4, b4 = find_line_equation([land_boundaries1.pt_b[1], land_boundaries2.pt_b[1]], [land_boundaries2.pt_b[2], land_boundaries1.pt_b[2]]) # end boundary
-            if ((x - c1)^2 + (y - d1)^2 < r1^2 && (x - c2)^2 + (y - d2)^2 > r2^2 && m3 * x + b3 < y && m4 * x + b4 > y)
-                return segment
+			turning_right = lane_boundaries_left.curvature < 0
+
+            left_r = abs(1 / lane_boundaries_left.curvature)
+            right_r = abs(1 / lane_boundaries_right.curvature)
+
+			big_radius = -1.0
+			small_radius = -1.0
+
+			if left_r < right_r
+				small_center_one, small_center_two = find_circle_center(lane_boundaries_left.pt_a, lane_boundaries_left.pt_b, left_r)
+				big_radius = right_r
+				small_radius = left_r
+			else
+				small_center_one, small_center_two = find_circle_center(lane_boundaries_right.pt_a, lane_boundaries_right.pt_b, right_r)
+				big_radius = left_r
+				small_radius = right_r
+			end
+
+			if norm([x; y] - small_center_one) < norm([x; y] - small_center_two)
+				circle_center = small_center_two
+			else
+				circle_center = small_center_one
+			end
+
+			dist_to_center = norm([x; y] - circle_center)
+			inside_curves = dist_to_center >= small_radius && dist_to_center <= big_radius
+
+			# check front and back
+			start_normal_vector = lane_boundaries_left.pt_b - lane_boundaries_left.pt_a
+			inside_start_boundary = dot(start_normal_vector, [x; y]) >= dot(start_normal_vector, lane_boundaries_left.pt_a)
+
+			end_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_left.pt_b
+			inside_end_boundary = dot(end_normal_vector, [x; y]) >= dot(end_normal_vector, lane_boundaries_left.pt_b)
+
+            if (inside_curves && inside_start_boundary && inside_end_boundary)
+                return id, segment
             end
         end
     end
@@ -172,20 +208,21 @@ function find_line_equation(coord1, coord2)
 end
 
 """
-Finds the center coordinates of an implied circle given 2 xy coordiniates of points on the circumference and the circle's radius. 
+Finds the center coordinates of an implied circle given 2 xy coordinates of points on the circumference and the circle's radius. 
 """
-function find_circle_center(x1, y1, x2, y2, r)
-    q = sqrt((x2 - x1)^2 + (y2 - y1)^2)
-    y3 = (y1 + y2) / 2
-    x3 = (x1 + x2) / 2
+function find_circle_center(p1, p2, r)
+    q = sqrt((p2[1] - p1[1])^2 + (p2[2] - p1[2])^2)
+    avg = (p1 + p2) / 2
 
     # There are 2 possible circles to go through 2 points. We will need to figure out how to choose which one we want
-    xC1 = x3 + sqrt(r^2 - (q / 2)^2) * (y1 - y2) / q
-    yC1 = y3 + sqrt(r^2 - (q / 2)^2) * (x2 - x1) / q
-    xC2 = x3 - sqrt(r^2 - (q / 2)^2) * (y1 - y2) / q
-    yC2 = y3 - sqrt(r^2 - (q / 2)^2) * (x2 - x1) / q
 
-    return xC1, yC1, xC2, yC2
+	center_one = [avg[1] + sqrt(r^2 - (q / 2)^2) * (p1[2] - p2[2]) / q
+   				  avg[2] + sqrt(r^2 - (q / 2)^2) * (p2[1] - p1[1]) / q]
+
+	center_two = [avg[1] - sqrt(r^2 - (q / 2)^2) * (p1[2] - p2[2]) / q
+				  avg[2] - sqrt(r^2 - (q / 2)^2) * (p2[1] - p1[1]) / q]
+
+    return center_one, center_two 
 end
 
 """
