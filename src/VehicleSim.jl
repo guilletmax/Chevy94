@@ -30,6 +30,7 @@ include("localization.jl")
 include("perception.jl")
 include("decision_making.jl")
 include("project.jl")
+include("example_project.jl")
 
 export server, shutdown!, keyboard_client, autonomous_client
 
