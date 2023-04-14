@@ -62,7 +62,7 @@ function decision_making(localization_state_channel,
     crossed_segment_count = 0
 
     @async while isopen(socket)
-        sleep(0.05)
+        sleep(0.01)
 
         """TODO"""
         # STEP 3 -> make sure this causes no issues when used in the loop. localization_state_channel 
@@ -72,9 +72,11 @@ function decision_making(localization_state_channel,
         # @info curr_seg
 
         if (isready(localization_state_channel))
-            @info "here"
             x = take!(localization_state_channel)
-            @info x
+
+            controls.steering_angle = get_steering_angle(controls.steering_angle, x.position[1], x.position[2], curr_segment.lane_boundaries, epsilon)
+            # controls.target_speed = get_target_speed(controls.target_speed, curr_seg.speed_limit)
+            controls.target_speed = 1.0 #comment me out when ready
         end
 
         # NOTE: HOLD OFF ON PERCEPTION RELATED STUFF, lets figure out navigating with ground truth first
@@ -97,15 +99,6 @@ function decision_making(localization_state_channel,
         # 	end
         # end
 
-        """TODO"""
-        # STEP 5 -> fix get_steering_angle, note* we want to return the new steering angle from the function and set it here
-        controls.steering_angle = get_steering_angle(controls.steering_angle, x.position[1], x.position[2], curr_segment.lane_boundaries, epsilon)
-        # controls.steering_angle = 0.314 #comment me out when ready
-
-        """TODO"""
-        # STEP 6 -> fix get_target_speed, note* we want to return the new speed from the function and set it here
-        # controls.target_speed = get_target_speed(controls.target_speed, curr_seg.speed_limit)
-        controls.target_speed = 3.0 #comment me out when ready
 
         @info "decision_making.jl"
         @info "target speed $(controls.target_speed)"
@@ -206,12 +199,16 @@ function get_steering_angle(steering_angle, x, y, lane_boundaries, epsilon)
         @info "dot products: $a and $b"
         if a > b
             @info "We should turn left"
-            # turn left
-            return 0.314
+            angle = abs(a - b) * 0.001
+            @info angle
+            return angle
+
+            #return r
         elseif a < b
             @info "We should turn right"
-            # turn right
-            return -0.314
+            angle = -1 * abs(a - b) * 0.001
+            @info angle
+            return angle
         end
     else
         left_r = abs(1 / lane_boundaries_left.curvature)
