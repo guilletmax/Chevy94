@@ -1,5 +1,5 @@
 
-const CROSSED_CONFIRMED_COUNT = 0
+const CROSSED_CONFIRMED_COUNT = 5
 const v_step = 1.0
 const s_step = 0.314
 
@@ -60,6 +60,7 @@ function decision_making(localization_state_channel,
     next_path_index = 2
     epsilon = 0.1
     crossed_segment_count = 0
+    controls.target_speed = 7.0
 
     @async while isopen(socket)
         sleep(0.01)
@@ -77,7 +78,7 @@ function decision_making(localization_state_channel,
             @info "curr_segment: $(curr_segment.id)"
             @info "new_segments: $(new_segments)"
 
-            if (new_segments[1] != curr_segment)
+            if !(curr_segment in new_segments)
                 @info "new segment found"
                 if (crossed_segment_count < CROSSED_CONFIRMED_COUNT)
                     @info "crossed_segment_count: $crossed_segment_count"
@@ -96,11 +97,11 @@ function decision_making(localization_state_channel,
 
             @info curr_segment
             # STEP 5 -> fix get_steering_angle - maybe fixed!
-            controls.steering_angle = get_steering_angle(controls.steering_angle, x.position[1], x.position[2], curr_segment.lane_boundaries, epsilon)
+            update_steering_angle(controls, x.position[1], x.position[2], curr_segment.lane_boundaries, epsilon)
 
             # STEP 6 -> fix get_target_speed
             # controls.target_speed = get_target_speed(controls.target_speed, curr_seg.speed_limit)
-            controls.target_speed = 2.0 #comment me out when ready
+            # controls.target_speed = 8.0 #comment me out when ready
 
             @info "target speed: $(controls.target_speed)"
             @info "steering angle: $(controls.steering_angle)"
@@ -184,7 +185,7 @@ end
 """
 Update steering_angle if we deviate from the center localization_state. Lane_boundaries is a vector of the current segment's lane boundaries. 
 """
-function get_steering_angle(steering_angle, x, y, lane_boundaries, epsilon)
+function update_steering_angle(controls, x, y, lane_boundaries, epsilon)
     lane_curve = lane_boundaries[1].curvature != 0 # True if curved, false if straight, 0 if straight, negative if curve right, positive if curve left. 
     @info "in function"
     lane_boundaries_left = lane_boundaries[1]
@@ -209,6 +210,7 @@ function get_steering_angle(steering_angle, x, y, lane_boundaries, epsilon)
         end
         return angle
     else
+        controls.target_speed = 0.5
         @info "sup"
         left_r = abs(1 / lane_boundaries_left.curvature)
         right_r = abs(1 / lane_boundaries_right.curvature)
@@ -245,25 +247,28 @@ function get_steering_angle(steering_angle, x, y, lane_boundaries, epsilon)
         dist_end = norm([x; y] - ((lane_boundaries_left.pt_b + lane_boundaries_right.pt_b) / 2))
         @info dist_end
 
-        #angle = asin(dist_end / (2 * lane_center_radius))
-        angle = lane_boundaries_left.curvature
+        angle = asin(dist_end / (2 * lane_center_radius))
+        if right_turn
+            angle *= -1
+        end
+        #angle = lane_boundaries_left.curvature
         @info angle
         # if we are turning too tightly
-        if lane_center_radius > dist_to_center
-            if right_turn
-                angle += abs(lane_center_radius - dist_to_center) * 20
-            else
-                angle -= abs(lane_center_radius - dist_to_center) * 20
-            end
-        else
-            if right_turn
-                angle -= abs(lane_center_radius - dist_to_center) * 20
-            else
-                angle += abs(lane_center_radius - dist_to_center) * 20
-            end
-        end
+        # if lane_center_radius > dist_to_center
+        #     if right_turn
+        #         angle += abs(lane_center_radius - dist_to_center)
+        #     else
+        #         angle -= abs(lane_center_radius - dist_to_center)
+        #     end
+        # else
+        #     if right_turn
+        #         angle -= abs(lane_center_radius - dist_to_center) * 20
+        #     else
+        #         angle += abs(lane_center_radius - dist_to_center) * 20
+        #     end
+        # end
         @info "angle: $angle"
-        return angle
+        controls.steering_angle = angle
     end
 end
 
