@@ -1,5 +1,5 @@
 
-const CROSSED_CONFIRMED_COUNT = 10
+const CROSSED_CONFIRMED_COUNT = 0
 const v_step = 1.0
 const s_step = 0.314
 
@@ -15,9 +15,8 @@ function decision_making(localization_state_channel,
     """REMOVE ME EVENTUALLY"""
     target_road_segment_id = 44
 
-    """temporarily instantiating x here so we can access it in steering angle"""
-    x = 0
 
+    x = -1
     curr_segment = -1
     path = []
 
@@ -26,6 +25,7 @@ function decision_making(localization_state_channel,
         sleep(0.01)
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
+            @info x
 
             """TODO"""
             # STEP 1 -> fix get_segments_from_localization - maybe fixed! could produce bugs once we get the car moving though.
@@ -64,19 +64,46 @@ function decision_making(localization_state_channel,
     @async while isopen(socket)
         sleep(0.01)
 
-        """TODO"""
-        # STEP 3 -> make sure this causes no issues when used in the loop. localization_state_channel 
-        #           should always be filled here, i don't think you no need to check if it's ready
-        #x = fetch(localization_state_channel)
-        # curr_segment = get_segment_from_localization(x[1], x[2], map)
-        # @info curr_seg
-
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
+            @info "x_position: $(x.position[1])"
+            @info "y_position: $(x.position[2])"
 
+            """TODO"""
+            # STEP 4 -> see if we can get this working, supposed to verify when we cross into a new segment 
+            #           and update curr_seg and crossed_segment_index
+            new_segments = get_segments_from_localization(x.position[1], x.position[2], map)
+
+            @info "curr_segment: $(curr_segment.id)"
+            @info "new_segments: $(new_segments)"
+
+            if (new_segments[1] != curr_segment)
+                @info "new segment found"
+                if (crossed_segment_count < CROSSED_CONFIRMED_COUNT)
+                    @info "crossed_segment_count: $crossed_segment_count"
+                    crossed_segment_count += 1
+                else
+                    curr_segment = map[path[next_path_index]]
+                    @info "new curr_segment: $curr_segment"
+                    # sanity check: checks that the next segment in the path is actually one of the one's our get_segment function found - syntax issues rn, not working
+                    #if !(curr_segment.id in map(new_segment -> new_segment.id, new_segments))
+                    #    @info "curr_segment not in new_segments"
+                    #end
+                    next_path_index += 1
+                    crossed_segment_count = 0
+                end
+            end
+
+            @info curr_segment
+            # STEP 5 -> fix get_steering_angle - maybe fixed!
             controls.steering_angle = get_steering_angle(controls.steering_angle, x.position[1], x.position[2], curr_segment.lane_boundaries, epsilon)
+
+            # STEP 6 -> fix get_target_speed
             # controls.target_speed = get_target_speed(controls.target_speed, curr_seg.speed_limit)
-            controls.target_speed = 1.0 #comment me out when ready
+            controls.target_speed = 2.0 #comment me out when ready
+
+            @info "target speed: $(controls.target_speed)"
+            @info "steering angle: $(controls.steering_angle)"
         end
 
         # NOTE: HOLD OFF ON PERCEPTION RELATED STUFF, lets figure out navigating with ground truth first
@@ -85,24 +112,6 @@ function decision_making(localization_state_channel,
         #     p_state = fetch(perception_state_channel)
         # end
 
-
-        """TODO"""
-        # STEP 4 -> see if we can get this working, supposed to verify when we cross into a new segment 
-        #           and update curr_seg and crossed_segment_index
-        # if (get_segment_from_localization(x[1], x[2], map) != curr_seg)
-        #     if (crossed_segment_count < CROSSED_CONFIRMED_COUNT)
-        #         crossed_segment_count+=1
-        #     else
-        #         curr_seg = path[next_path_index]
-        #         next_path_index+= 1
-        #         crossed_segment_count = 0
-        # 	end
-        # end
-
-
-        @info "decision_making.jl"
-        @info "target speed $(controls.target_speed)"
-        @info "steering angle $(controls.steering_angle)"
     end
 
 end
@@ -111,11 +120,10 @@ end
 Get segment ID from localization x and y state and map
 """
 function get_segments_from_localization(x, y, map)
+    segments = []
     for (id, segment) in map
         lane_boundaries_left = segment.lane_boundaries[1]
         lane_boundaries_right = segment.lane_boundaries[2]
-        is_intersection = intersection in segment.lane_types
-        segments = []
 
         if (segment.lane_boundaries[1].curvature == 0)
             left_normal_vector = lane_boundaries_right.pt_a - lane_boundaries_left.pt_a
@@ -127,8 +135,8 @@ function get_segments_from_localization(x, y, map)
             end_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_left.pt_b
             inside_end_boundary = dot(end_normal_vector, [x; y]) >= dot(end_normal_vector, lane_boundaries_left.pt_b)
             if (inside_left_boundary && inside_right_boundary && inside_start_boundary && inside_end_boundary)
-                if (is_intersection)
-                    push!([segment], segments)
+                if (VehicleSim.intersection in segment.lane_types)
+                    push!(segments, segment)
                 else
                     return [segment]
                 end
@@ -157,16 +165,13 @@ function get_segments_from_localization(x, y, map)
 
             dist_to_center = norm([x; y] - circle_center)
             inside_curves = dist_to_center >= small_radius && dist_to_center <= big_radius
-
             start_normal_vector = lane_boundaries_left.pt_b - lane_boundaries_left.pt_a
             inside_start_boundary = dot(start_normal_vector, [x; y]) >= dot(start_normal_vector, lane_boundaries_left.pt_a)
-
             end_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_left.pt_b
             inside_end_boundary = dot(end_normal_vector, [x; y]) >= dot(end_normal_vector, lane_boundaries_left.pt_b)
-
             if (inside_curves && inside_start_boundary && inside_end_boundary)
-                if (is_intersection)
-                    push!([segment], segments)
+                if (VehicleSim.intersection in segment.lane_types)
+                    push!(segments, segment)
                 else
                     return [segment]
                 end
@@ -188,34 +193,29 @@ function get_steering_angle(steering_angle, x, y, lane_boundaries, epsilon)
     @info x
     @info y
     if !lane_curve
-        @info "not curved"
         normal_vector = lane_boundaries_right.pt_a - lane_boundaries_left.pt_a
         center_point = (lane_boundaries_left.pt_a + lane_boundaries_right.pt_a) / 2
-        @info "normal vec: $normal_vector"
-        @info "center point: $center_point"
 
         a = dot(normal_vector, [x; y])
         b = dot(normal_vector, center_point)
-        @info "dot products: $a and $b"
+        @info a
+        @info b
         if a > b
-            @info "We should turn left"
             angle = abs(a - b) * 0.001
-            @info angle
-            return angle
-
-            #return r
         elseif a < b
-            @info "We should turn right"
             angle = -1 * abs(a - b) * 0.001
-            @info angle
-            return angle
+        else
+            angle = 0
         end
+        return angle
     else
+        @info "sup"
         left_r = abs(1 / lane_boundaries_left.curvature)
         right_r = abs(1 / lane_boundaries_right.curvature)
 
         big_radius = -1.0
         small_radius = -1.0
+        right_turn = false
 
         if left_r < right_r
             small_center_one, small_center_two = find_circle_center(lane_boundaries_left.pt_a, lane_boundaries_left.pt_b, left_r)
@@ -225,6 +225,7 @@ function get_steering_angle(steering_angle, x, y, lane_boundaries, epsilon)
             small_center_one, small_center_two = find_circle_center(lane_boundaries_right.pt_a, lane_boundaries_right.pt_b, right_r)
             big_radius = left_r
             small_radius = right_r
+            right_turn = true
         end
 
         circle_center = [0, 0]
@@ -236,17 +237,33 @@ function get_steering_angle(steering_angle, x, y, lane_boundaries, epsilon)
         @info circle_center
 
         lane_center_radius = (left_r + right_r) / 2
-
+        @info lane_center_radius
         dist_to_center = norm([x; y] - circle_center)
-        closer_to_inner_curve = dist_to_center <= lane_center_radius
+        @info dist_to_center
+        @info "distance to end: "
+        @info "avg: $((lane_boundaries_left.pt_b + lane_boundaries_right.pt_b) / 2)"
+        dist_end = norm([x; y] - ((lane_boundaries_left.pt_b + lane_boundaries_right.pt_b) / 2))
+        @info dist_end
 
-        if closer_to_inner_curve
-            if lane_boundaries[1].curvature < 0
-                return -0.314
-            elseif lane_boundaries[1].curvature > 0
-                return 0.314
+        #angle = asin(dist_end / (2 * lane_center_radius))
+        angle = lane_boundaries_left.curvature
+        @info angle
+        # if we are turning too tightly
+        if lane_center_radius > dist_to_center
+            if right_turn
+                angle += abs(lane_center_radius - dist_to_center) * 20
+            else
+                angle -= abs(lane_center_radius - dist_to_center) * 20
+            end
+        else
+            if right_turn
+                angle -= abs(lane_center_radius - dist_to_center) * 20
+            else
+                angle += abs(lane_center_radius - dist_to_center) * 20
             end
         end
+        @info "angle: $angle"
+        return angle
     end
 end
 
