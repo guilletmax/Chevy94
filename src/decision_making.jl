@@ -15,15 +15,17 @@ function decision_making(localization_state_channel,
     """REMOVE ME EVENTUALLY"""
     target_road_segment_id = 44
 
+    """temporarily instantiating x here so we can access it in steering angle"""
+    x = 0
 
     curr_segment = -1
     path = []
 
     is_setup = false
     while !is_setup
-        sleep(0.001)
+        sleep(0.01)
         if (isready(localization_state_channel))
-            x = fetch(localization_state_channel)
+            x = take!(localization_state_channel)
 
             """TODO"""
             # STEP 1 -> fix get_segments_from_localization - maybe fixed! could produce bugs once we get the car moving though.
@@ -60,20 +62,27 @@ function decision_making(localization_state_channel,
     crossed_segment_count = 0
 
     @async while isopen(socket)
-        sleep(0.5)
+        sleep(0.05)
 
         """TODO"""
         # STEP 3 -> make sure this causes no issues when used in the loop. localization_state_channel 
         #           should always be filled here, i don't think you no need to check if it's ready
-        # x = fetch(localization_state_channel)
-        # curr_seg = get_segment_from_localization(x[1], x[2], map)
+        #x = fetch(localization_state_channel)
+        # curr_segment = get_segment_from_localization(x[1], x[2], map)
         # @info curr_seg
+
+        if (isready(localization_state_channel))
+            @info "here"
+            x = take!(localization_state_channel)
+            @info x
+        end
 
         # NOTE: HOLD OFF ON PERCEPTION RELATED STUFF, lets figure out navigating with ground truth first
         # p_state = []
         # if (isready(perception_state_channel))
         #     p_state = fetch(perception_state_channel)
         # end
+
 
         """TODO"""
         # STEP 4 -> see if we can get this working, supposed to verify when we cross into a new segment 
@@ -90,8 +99,8 @@ function decision_making(localization_state_channel,
 
         """TODO"""
         # STEP 5 -> fix get_steering_angle, note* we want to return the new steering angle from the function and set it here
-        # controls.steering_angle = get_steering_angle(controls.steering_angle, x[1], x[2], curr_seg.lane_boundaries, epsilon)
-        controls.steering_angle = 0.314 #comment me out when ready
+        controls.steering_angle = get_steering_angle(controls.steering_angle, x.position[1], x.position[2], curr_segment.lane_boundaries, epsilon)
+        # controls.steering_angle = 0.314 #comment me out when ready
 
         """TODO"""
         # STEP 6 -> fix get_target_speed, note* we want to return the new speed from the function and set it here
@@ -177,37 +186,73 @@ end
 """
 Update steering_angle if we deviate from the center localization_state. Lane_boundaries is a vector of the current segment's lane boundaries. 
 """
-function get_steering_angle(steering_angle, curr_x, curr_y, lane_boundaries, epsilon)
-    edge1_coord_start = lane_boundaries[1].pt_a
-    edge1_coord_end = lane_boundaries[1].pt_b
-    edge2_coord_start = lane_boundaries[2].pt_a
-    edge2_coord_end = lane_boundaries[2].pt_b
+function get_steering_angle(steering_angle, x, y, lane_boundaries, epsilon)
     lane_curve = lane_boundaries[1].curvature != 0 # True if curved, false if straight, 0 if straight, negative if curve right, positive if curve left. 
+    @info "in function"
+    lane_boundaries_left = lane_boundaries[1]
+    lane_boundaries_right = lane_boundaries[2]
 
-    # middle_coord_start and middle_coord_end are the end points of the line/curve that is the middle of the lane
-    middle_coord_start = [edge1_coord_start[1] - edge2_coord_start[1], edge1_coord_start[2] - edge2_coord_start[2]]
-    middle_coord_end = [edge1_coord_end[1] - edge2_coord_end[1], edge1_coord_end[2] - edge2_coord_end[2]]
-    middle_curvature = (abs(abs(lane_boundaries[1].curvature) - abs(lane_boundaries[2].curvature)) / 2) + min(abs(lane_boundaries[1].curvature), abs(lane_boundaries[2].curvature))
+    @info x
+    @info y
+    if !lane_curve
+        @info "not curved"
+        normal_vector = lane_boundaries_right.pt_a - lane_boundaries_left.pt_a
+        center_point = (lane_boundaries_left.pt_a + lane_boundaries_right.pt_a) / 2
+        @info "normal vec: $normal_vector"
+        @info "center point: $center_point"
 
-    if (lane_curve) # If lane is curved
-        # x_shift and y_shift are the x and y coordinates of the center of the circle
-        x_shift, y_shift = find_circle_center(middle_coord_end[1], middle_coord_end[2], middle_coord_start[1], middle_coord_start[2], 1 / abs(middle_curvature))
-
-        # All circles have form (x-a)^2+(y-b)^2 = r^2
-        if ((curr_x - x_shift)^2 + (curr_y - y_shift)^2 < (1 / middle_curvature)^2) # if we are too close to the inside border
-            return steering_angle - s_step
-        elseif ((curr_x - x_shift)^2 + (curr_y - y_shift)^2 > (1 / middle_curvature)^2) # if we are too close to the outside border
-            return steering_angle + s_step
+        a = dot(normal_vector, [x; y])
+        b = dot(normal_vector, center_point)
+        @info "dot products: $a and $b"
+        if a > b
+            @info "We should turn left"
+            # turn left
+            return 0.314
+        elseif a < b
+            @info "We should turn right"
+            # turn right
+            return -0.314
         end
-    else # If lane is straight
-        m, b = find_line_equation(middle_coord_start, middle_coord_end)
-        if (curr_y < curr_x * m + b - epsilon) # If to the left of the center line
-            return steering_angle - s_step
-        elseif (curr_y > curr_x * m + b + epsilon) # If to the right of the center line
-            return steering_anglea + s_step
+    else
+        left_r = abs(1 / lane_boundaries_left.curvature)
+        right_r = abs(1 / lane_boundaries_right.curvature)
+
+        big_radius = -1.0
+        small_radius = -1.0
+
+        if left_r < right_r
+            small_center_one, small_center_two = find_circle_center(lane_boundaries_left.pt_a, lane_boundaries_left.pt_b, left_r)
+            big_radius = right_r
+            small_radius = left_r
+        else
+            small_center_one, small_center_two = find_circle_center(lane_boundaries_right.pt_a, lane_boundaries_right.pt_b, right_r)
+            big_radius = left_r
+            small_radius = right_r
+        end
+
+        circle_center = [0, 0]
+        if norm([x; y] - small_center_one) < norm([x; y] - small_center_two)
+            circle_center = small_center_two
+        else
+            circle_center = small_center_one
+        end
+        @info circle_center
+
+        lane_center_radius = (left_r + right_r) / 2
+
+        dist_to_center = norm([x; y] - circle_center)
+        closer_to_inner_curve = dist_to_center <= lane_center_radius
+
+        if closer_to_inner_curve
+            if lane_boundaries[1].curvature < 0
+                return -0.314
+            elseif lane_boundaries[1].curvature > 0
+                return 0.314
+            end
         end
     end
 end
+
 
 """
 Given two coordinates, returns the equation of the line in y = mx + b form. 

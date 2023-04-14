@@ -51,7 +51,10 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
             elseif meas isa CameraMeasurement
                 !isfull(cam_channel) && put!(cam_channel, meas)
             elseif meas isa GroundTruthMeasurement
+                @info "new gt meas"
+                @info meas
                 !isfull(gt_channel) && put!(gt_channel, meas)
+                @info "added"
             end
             # @info "meas: $meas"
         end
