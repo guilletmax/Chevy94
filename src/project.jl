@@ -65,6 +65,7 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
     @async decision_making(gt_channel, perception_state_channel, map, socket, controls)
 
     while controlled && isopen(socket)
+		sleep(0.01)
         cmd = VehicleCommand(controls.steering_angle, controls.target_speed, controlled)
         serialize(socket, cmd)
     end

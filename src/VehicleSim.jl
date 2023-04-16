@@ -30,8 +30,7 @@ include("localization.jl")
 include("perception.jl")
 include("decision_making.jl")
 include("project.jl")
-include("example_project.jl")
 
-export server, shutdown!, keyboard_client, autonomous_client
+export server, shutdown!, keyboard_client, autonomous_client, shortest_path_bfs, get_segments_from_localization
 
 end

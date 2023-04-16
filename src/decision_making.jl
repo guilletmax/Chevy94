@@ -51,51 +51,79 @@ function decision_making(localization_state_channel,
         end
     end
 
-    @info x.position[1]
-    @info x.position[2]
-    @info curr_segment
-    @info path
-    @info "done with setup"
+    #@info x.position[1]
+    #@info x.position[2]
+    #@info curr_segment
+    #@info path
+    #@info "done with setup"
 
     next_path_index = 2
     epsilon = 0.1
     crossed_segment_count = 0
-    controls.target_speed = 7.0
+    controls.target_speed = 4.0
+
+	prev_segment = curr_segment
 
     @async while isopen(socket)
         sleep(0.01)
 
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
-            @info "x_position: $(x.position[1])"
-            @info "y_position: $(x.position[2])"
+            #@info "x_position: $(x.position[1])"
+            #@info "y_position: $(x.position[2])"
 
             """TODO"""
             # STEP 4 -> see if we can get this working, supposed to verify when we cross into a new segment 
             #           and update curr_seg and crossed_segment_index
-            new_segments = get_segments_from_localization(x.position[1], x.position[2], map)
+            segments = get_segments_from_localization(x.position[1], x.position[2], map)
 
-            @info "curr_segment: $(curr_segment.id)"
-            @info "new_segments: $(new_segments)"
+			if curr_segment.id != prev_segment.id
+				prev_segment = curr_segment
+				next_path_index += 1
+			end
 
-            if !(curr_segment in new_segments)
-                @info "new segment found"
-                if (crossed_segment_count < CROSSED_CONFIRMED_COUNT)
-                    @info "crossed_segment_count: $crossed_segment_count"
-                    crossed_segment_count += 1
-                else
-                    curr_segment = map[path[next_path_index]]
-                    @info "new curr_segment: $curr_segment"
-                    # sanity check: checks that the next segment in the path is actually one of the one's our get_segment function found - syntax issues rn, not working
-                    #if !(curr_segment.id in map(new_segment -> new_segment.id, new_segments))
-                    #    @info "curr_segment not in new_segments"
-                    #end
-                    next_path_index += 1
-                    crossed_segment_count = 0
-                end
-            end
+			if length(segments) == 1
+				curr_segment = segments[1]
+			else
+				for seg in segments
+					#@info "considering seg $(seg.id)"
+					if seg.id == path[next_path_index]
+						curr_segment = seg
+						#@info "chose $(curr_segment.id)"
+						break
+					end
+				end
+			end
 
-            @info curr_segment
+			@info "curr segment: $(curr_segment.id)"
+			#@info "next_path_index: $next_path_index"
+
+			if curr_segment.id == target_road_segment_id
+				controls.target_speed = 0
+			end
+
+
+            #@info "curr_segment: $(curr_segment.id)"
+            #@info "new_segments: $(new_segments)"
+
+            #if !(curr_segment in new_segments)
+            #    #@info "new segment found"
+            #    if (crossed_segment_count < CROSSED_CONFIRMED_COUNT)
+            #        #@info "crossed_segment_count: $crossed_segment_count"
+            #        crossed_segment_count += 1
+            #    else
+            #        curr_segment = map[path[next_path_index]]
+            #        #@info "new curr_segment: $curr_segment"
+            #        # sanity check: checks that the next segment in the path is actually one of the one's our get_segment function found - syntax issues rn, not working
+            #        #if !(curr_segment.id in map(new_segment -> new_segment.id, new_segments))
+            #        #    @info "curr_segment not in new_segments"
+            #        #end
+            #        next_path_index += 1
+            #        crossed_segment_count = 0
+            #    end
+            #end
+
+            #@info "curr_segment: $(curr_segment.id)"
             # STEP 5 -> fix get_steering_angle - maybe fixed!
             update_steering_angle(controls, x.position[1], x.position[2], curr_segment.lane_boundaries, epsilon)
 
@@ -103,7 +131,7 @@ function decision_making(localization_state_channel,
             # controls.target_speed = get_target_speed(controls.target_speed, curr_seg.speed_limit)
             # controls.target_speed = 8.0 #comment me out when ready
 
-            @info "target speed: $(controls.target_speed)"
+            #@info "target speed: $(controls.target_speed)"
             @info "steering angle: $(controls.steering_angle)"
         end
 
@@ -187,31 +215,30 @@ Update steering_angle if we deviate from the center localization_state. Lane_bou
 """
 function update_steering_angle(controls, x, y, lane_boundaries, epsilon)
     lane_curve = lane_boundaries[1].curvature != 0 # True if curved, false if straight, 0 if straight, negative if curve right, positive if curve left. 
-    @info "in function"
+    #@info "in function"
     lane_boundaries_left = lane_boundaries[1]
     lane_boundaries_right = lane_boundaries[2]
 
-    @info x
-    @info y
+    #@info x
+    #@info y
     if !lane_curve
         normal_vector = lane_boundaries_right.pt_a - lane_boundaries_left.pt_a
         center_point = (lane_boundaries_left.pt_a + lane_boundaries_right.pt_a) / 2
 
         a = dot(normal_vector, [x; y])
         b = dot(normal_vector, center_point)
-        @info a
-        @info b
+        #@info a
+        #@info b
         if a > b
-            angle = abs(a - b) * 0.001
+            controls.steering_angle = abs(a - b) * 0.005
         elseif a < b
-            angle = -1 * abs(a - b) * 0.001
+            controls.steering_angle = -1 * abs(a - b) * 0.005
         else
-            angle = 0
+            controls.steering_angle = 0
         end
-        return angle
     else
-        controls.target_speed = 0.5
-        @info "sup"
+        #controls.target_speed = 1
+        #@info "sup"
         left_r = abs(1 / lane_boundaries_left.curvature)
         right_r = abs(1 / lane_boundaries_right.curvature)
 
@@ -236,38 +263,53 @@ function update_steering_angle(controls, x, y, lane_boundaries, epsilon)
         else
             circle_center = small_center_one
         end
-        @info circle_center
+        #@info circle_center
 
         lane_center_radius = (left_r + right_r) / 2
-        @info lane_center_radius
+        #@info lane_center_radius
         dist_to_center = norm([x; y] - circle_center)
-        @info dist_to_center
-        @info "distance to end: "
-        @info "avg: $((lane_boundaries_left.pt_b + lane_boundaries_right.pt_b) / 2)"
-        dist_end = norm([x; y] - ((lane_boundaries_left.pt_b + lane_boundaries_right.pt_b) / 2))
-        @info dist_end
+        #@info dist_to_center
+        #@info "distance to end: "
+        #@info "avg: $((lane_boundaries_left.pt_b + lane_boundaries_right.pt_b) / 2)"
+        #dist_end = norm([x; y] - ((lane_boundaries_left.pt_b + lane_boundaries_right.pt_b) / 2))
+        #@info dist_end
 
-        angle = asin(dist_end / (2 * lane_center_radius))
+        #inside_curves = dist_to_center <= lane_center_radius
+
+		angle_nominal = atan(7.75/lane_center_radius)
+		K = 1
+		#angle_actual = angle_nominal + K * (radius_actual - radius_desired)
+		angle = angle_nominal
         if right_turn
-            angle *= -1
+			angle *= -1
         end
+		#angle -= (dist_to_center - lane_center_radius)
+		
+		#@info "diff: $(dist_to_center - lane_center_radius)"
+
+		if dist_to_center < lane_center_radius
+			angle += 0.2
+		else
+			angle -= 0.2
+		end
+
+
         #angle = lane_boundaries_left.curvature
-        @info angle
         # if we are turning too tightly
-        # if lane_center_radius > dist_to_center
-        #     if right_turn
-        #         angle += abs(lane_center_radius - dist_to_center)
-        #     else
-        #         angle -= abs(lane_center_radius - dist_to_center)
-        #     end
-        # else
-        #     if right_turn
-        #         angle -= abs(lane_center_radius - dist_to_center) * 20
-        #     else
-        #         angle += abs(lane_center_radius - dist_to_center) * 20
-        #     end
-        # end
-        @info "angle: $angle"
+       #  if lane_center_radius > dist_to_center
+       #      if right_turn
+       #          angle += abs(lane_center_radius - dist_to_center) / 40
+       #      else
+       #          angle -= abs(lane_center_radius - dist_to_center)
+       #      end
+       #  else
+       #      if right_turn
+       #          angle -= abs(lane_center_radius - dist_to_center) / 40 
+       #      else
+       #          angle += abs(lane_center_radius - dist_to_center) * 20
+       #      end
+       #  end
+        #@info "angle: $angle"
         controls.steering_angle = angle
     end
 end
