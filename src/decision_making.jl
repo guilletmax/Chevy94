@@ -77,7 +77,7 @@ function decision_making(localization_state_channel,
             #           and update curr_seg and crossed_segment_index
             segments = get_segments_from_localization(x.position[1], x.position[2], map)
 
-			if curr_segment.id != prev_segment.id
+			if curr_segment.id != prev_segment.id && curr_segment.id == path[next_path_index]
 				prev_segment = curr_segment
 				next_path_index += 1
 			end
@@ -96,7 +96,7 @@ function decision_making(localization_state_channel,
 			end
 
 			@info "curr segment: $(curr_segment.id)"
-			#@info "next_path_index: $next_path_index"
+			@info "desired next segment: $(path[next_path_index])"
 
 			if curr_segment.id == target_road_segment_id
 				controls.target_speed = 0
@@ -222,17 +222,15 @@ function update_steering_angle(controls, x, y, lane_boundaries, epsilon)
     #@info x
     #@info y
     if !lane_curve
-        normal_vector = lane_boundaries_right.pt_a - lane_boundaries_left.pt_a
         center_point = (lane_boundaries_left.pt_a + lane_boundaries_right.pt_a) / 2
+        normal_vector = lane_boundaries_right.pt_a - center_point
+		normal_vector /= norm(normal_vector)
 
         a = dot(normal_vector, [x; y])
         b = dot(normal_vector, center_point)
-        #@info a
-        #@info b
-        if a > b
-            controls.steering_angle = abs(a - b) * 0.005
-        elseif a < b
-            controls.steering_angle = -1 * abs(a - b) * 0.005
+
+        if a != b
+            controls.steering_angle = 0.005 * (a - b)
         else
             controls.steering_angle = 0
         end
@@ -263,53 +261,21 @@ function update_steering_angle(controls, x, y, lane_boundaries, epsilon)
         else
             circle_center = small_center_one
         end
-        #@info circle_center
 
         lane_center_radius = (left_r + right_r) / 2
-        #@info lane_center_radius
         dist_to_center = norm([x; y] - circle_center)
-        #@info dist_to_center
-        #@info "distance to end: "
-        #@info "avg: $((lane_boundaries_left.pt_b + lane_boundaries_right.pt_b) / 2)"
-        #dist_end = norm([x; y] - ((lane_boundaries_left.pt_b + lane_boundaries_right.pt_b) / 2))
-        #@info dist_end
 
-        #inside_curves = dist_to_center <= lane_center_radius
-
-		angle_nominal = atan(7.75/lane_center_radius)
-		K = 1
-		#angle_actual = angle_nominal + K * (radius_actual - radius_desired)
+		angle_nominal = 1.1 * atan(7.75/lane_center_radius)
 		angle = angle_nominal
         if right_turn
 			angle *= -1
         end
-		#angle -= (dist_to_center - lane_center_radius)
-		
-		#@info "diff: $(dist_to_center - lane_center_radius)"
 
-		if dist_to_center < lane_center_radius
-			angle += 0.2
-		else
-			angle -= 0.2
-		end
-
-
-        #angle = lane_boundaries_left.curvature
-        # if we are turning too tightly
-       #  if lane_center_radius > dist_to_center
-       #      if right_turn
-       #          angle += abs(lane_center_radius - dist_to_center) / 40
-       #      else
-       #          angle -= abs(lane_center_radius - dist_to_center)
-       #      end
-       #  else
-       #      if right_turn
-       #          angle -= abs(lane_center_radius - dist_to_center) / 40 
-       #      else
-       #          angle += abs(lane_center_radius - dist_to_center) * 20
-       #      end
-       #  end
-        #@info "angle: $angle"
+       	if right_turn
+        	angle += 0.1 * (lane_center_radius - dist_to_center)
+        else
+            angle -= 0.1 * abs(lane_center_radius - dist_to_center)
+        end
         controls.steering_angle = angle
     end
 end
