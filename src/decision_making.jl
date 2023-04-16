@@ -13,7 +13,8 @@ function decision_making(localization_state_channel,
     controls)
 
     """REMOVE ME EVENTUALLY"""
-    target_road_segment_id = 44
+    target_road_segment_id = 94
+	@info "Target: $target_road_segment_id"
 
 
     x = -1
@@ -25,7 +26,6 @@ function decision_making(localization_state_channel,
         sleep(0.01)
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
-            @info x
 
             """TODO"""
             # STEP 1 -> fix get_segments_from_localization - maybe fixed! could produce bugs once we get the car moving though.
@@ -271,11 +271,7 @@ function update_steering_angle(controls, x, y, lane_boundaries, epsilon)
 			angle *= -1
         end
 
-       	if right_turn
-        	angle += 0.1 * (lane_center_radius - dist_to_center)
-        else
-            angle -= 0.1 * abs(lane_center_radius - dist_to_center)
-        end
+        angle += 0.1 * (lane_center_radius - dist_to_center)
         controls.steering_angle = angle
     end
 end
