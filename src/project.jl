@@ -1,7 +1,4 @@
-struct LocalizationType
-    field1::Int
-    field2::Float64
-end
+
 
 struct PerceptionType
     state::Vector{Float64}
