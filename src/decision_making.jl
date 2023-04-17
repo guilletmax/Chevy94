@@ -24,7 +24,7 @@ function decision_making(localization_state_channel,
     controls)
 
     """REMOVE ME EVENTUALLY"""
-    target_road_segment_id = 94
+    target_road_segment_id = 101
     @info "Target: $target_road_segment_id"
 
 
@@ -69,40 +69,48 @@ function decision_making(localization_state_channel,
     #@info "done with setup"
 
     next_path_index = 2
-    epsilon = 0.1
     crossed_segment_count = 0
     controls.target_speed = 4.0
 
     pid_state_straight = PIDState(0.0, 0.0, 0.0)
     pid_state_curved = PIDState(0.0, 0.0, 0.0)
-	
-	stopped = false # tells us if we have ever stopped at any point in the segment. Useful for stop signs
-    
-	@async while isopen(socket)
+
+    stopped = false # tells us if we have ever stopped at any point in the segment. Useful for stop signs
+
+    @async while isopen(socket)
         sleep(0.005)
 
-        if curr_segment.id == target_road_segment_id
-            controls.target_speed = 0
-            break
+        counter = 0
+        if curr_segment.id == target_road_segment_id && length(curr_segment.lane_boundaries) == 3
+            controls.target_speed = 3
+            update_steering_angle(controls, x.position[1], x.position[2], [curr_segment.lane_boundaries[2], curr_segment.lane_boundaries[3]], pid_state_straight, pid_state_curved)
+            counter += 1
+
+            # halfway there yet with localization*
+            if (counter > 1000) # this counter determines how long we drive within the pullover area before we stop
+                controls.target_speed = 0
+                break
+            end
+            continue
         end
 
-		if Int(curr_segment.lane_types[1]) == 3
-			distance_to_stop_sign = -1
-			if curr_segment.lane_boundaries[1].pt_b[1] == curr_segment.lane_boundaries[2].pt_b[1]
-				distance_to_stop_sign = abs(x.position[1] - curr_segment.lane_boundaries[1].pt_b[1])
-			else
-            	m, b = find_line_equation(curr_segment.lane_boundaries[1].pt_b, curr_segment.lane_boundaries[2].pt_b)
-            	distance_to_stop_sign = abs(m * x.position[1] - x.position[2] + b) / sqrt(m^2 + 1)
-			end
-			if distance_to_stop_sign < 10.0 && !stopped
-				controls.target_speed = 0
-				sleep(2)
-				controls.target_speed = 4
-				stopped = true
-			end
-		else
-			stopped = false
-		end
+        if Int(curr_segment.lane_types[1]) == 3
+            distance_to_stop_sign = -1
+            if curr_segment.lane_boundaries[1].pt_b[1] == curr_segment.lane_boundaries[2].pt_b[1]
+                distance_to_stop_sign = abs(x.position[1] - curr_segment.lane_boundaries[1].pt_b[1])
+            else
+                m, b = find_line_equation(curr_segment.lane_boundaries[1].pt_b, curr_segment.lane_boundaries[2].pt_b)
+                distance_to_stop_sign = abs(m * x.position[1] - x.position[2] + b) / sqrt(m^2 + 1)
+            end
+            if distance_to_stop_sign < 10.0 && !stopped
+                controls.target_speed = 0
+                sleep(2)
+                controls.target_speed = 4
+                stopped = true
+            end
+        else
+            stopped = false
+        end
 
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
@@ -117,8 +125,9 @@ function decision_making(localization_state_channel,
             for seg in segments
                 #@info "considering seg $(seg.id)"
                 if seg.id == path[next_path_index]
-					#stopped = false
+                    #stopped = false
                     curr_segment = seg
+                    @info curr_segment
                     next_path_index += 1
                     #@info "chose $(curr_segment.id)"
                     break
@@ -252,6 +261,7 @@ function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straig
     #@info x
     #@info y
     if !lane_curve
+        @info "straight"
         controls.target_speed = 5
         center_point = (lane_boundaries_left.pt_a + lane_boundaries_right.pt_a) / 2
         normal_vector = lane_boundaries_right.pt_a - center_point
@@ -292,7 +302,8 @@ function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straig
         controls.steering_angle = control_input
 
     else
-        controls.target_speed = 3
+        @info "curved"
+        controls.target_speed = 4
         #@info "sup"
         left_r = abs(1 / lane_boundaries_left.curvature)
         right_r = abs(1 / lane_boundaries_right.curvature)

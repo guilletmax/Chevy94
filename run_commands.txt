@@ -1,1 +1,1 @@
-using Pkg; Pkg.instantiate(); Pkg.add([PackageSpec(url="https://github.com/forrestlaine/MeshCat.jl"), PackageSpec(url="https://github.com/forrestlaine/RigidBodyDynamics.jl")]); using VehicleSim; s = server(); using Sockets; sleep(1); 
+using Revise; using Pkg; Pkg.instantiate(); Pkg.add([PackageSpec(url="https://github.com/forrestlaine/MeshCat.jl"), PackageSpec(url="https://github.com/forrestlaine/RigidBodyDynamics.jl")]); using VehicleSim; s = server(); using Sockets; sleep(1); 
