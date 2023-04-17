@@ -3,6 +3,17 @@ const CROSSED_CONFIRMED_COUNT = 5
 const v_step = 1.0
 const s_step = 0.314
 
+
+"""
+PID state
+"""
+mutable struct PIDState
+    error::Float64
+    prev_error::Float64
+    integral_error::Float64
+end
+
+
 """
 @KEV DO COMMENTS BRUH
 """
@@ -62,9 +73,11 @@ function decision_making(localization_state_channel,
     crossed_segment_count = 0
     controls.target_speed = 4.0
 
+    pid_state_straight = PIDState(0.0, 0.0, 0.0)
+    pid_state_curved = PIDState(0.0, 0.0, 0.0)
 
     @async while isopen(socket)
-        sleep(0.01)
+        sleep(0.005)
 
         if curr_segment.id == target_road_segment_id
             controls.target_speed = 0
@@ -116,7 +129,7 @@ function decision_making(localization_state_channel,
 
             #@info "curr_segment: $(curr_segment.id)"
             # STEP 5 -> fix get_steering_angle - maybe fixed!
-            update_steering_angle(controls, x.position[1], x.position[2], curr_segment.lane_boundaries, epsilon)
+            update_steering_angle(controls, x.position[1], x.position[2], curr_segment.lane_boundaries, pid_state_straight, pid_state_curved)
 
             # STEP 6 -> fix get_target_speed
             # controls.target_speed = get_target_speed(controls.target_speed, curr_seg.speed_limit)
@@ -204,11 +217,16 @@ end
 """
 Update steering_angle if we deviate from the center localization_state. Lane_boundaries is a vector of the current segment's lane boundaries. 
 """
-function update_steering_angle(controls, x, y, lane_boundaries, epsilon)
+function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straight, pid_state_curved)
     lane_curve = lane_boundaries[1].curvature != 0 # True if curved, false if straight, 0 if straight, negative if curve right, positive if curve left. 
-    #@info "in function"
+    @info "in function"
     lane_boundaries_left = lane_boundaries[1]
     lane_boundaries_right = lane_boundaries[2]
+
+    kp = 0.5 # proportional gain
+    ki = 0.01 # integral gain
+    kd = 20 # derivative gain
+    max_control_input = pi / 4
 
     #@info x
     #@info y
@@ -236,11 +254,22 @@ function update_steering_angle(controls, x, y, lane_boundaries, epsilon)
         # horizontal_velocity = controls.target_speed * sin(controls.steering_angle)
         #speed_dampening_factor = -0.0005
 
-        if a != b
-            controls.steering_angle = 0.005 * (a - b) #+ (horizontal_velocity * speed_dampening_factor)
-        else
-            controls.steering_angle = 0
-        end
+        # if a != b
+        #     controls.steering_angle = 0.005 * (a - b) #+ (horizontal_velocity * speed_dampening_factor)
+        # else
+        #     controls.steering_angle = 0
+        # end
+
+        @info pid_state_straight
+        @info a - b
+        pid_state_straight.error = a - b
+        @info pid_state_straight.error
+        control_input = pid_controller(pid_state_straight, kp, ki, kd, max_control_input)
+        @info control_input
+        @info pid_state_straight
+
+        controls.steering_angle = control_input
+
     else
         controls.target_speed = 3
         #@info "sup"
@@ -281,8 +310,46 @@ function update_steering_angle(controls, x, y, lane_boundaries, epsilon)
             angle -= 0.1 * (lane_center_radius - dist_to_center)
         end
 
+
+        # pid_state_curved.error = dist_to_center
+        # @info pid_state_curved.error
+        # control_input = pid_controller(pid_state_curved, kp, ki, kd, max_control_input)
+        # @info control_input
+        # @info pid_state_curved
+
+        # controls.steering_angle = control_input
+
+
         controls.steering_angle = angle
     end
+end
+
+
+"""
+PID controller
+"""
+function pid_controller(pid_state, kp, ki, kd, max_control_input)
+    proportional_term = kp * pid_state.error
+    @info proportional_term
+    integral_term = ki * (pid_state.integral_error + pid_state.error)
+    @info integral_term
+    derivative_term = kd * (pid_state.error - pid_state.prev_error)
+    @info derivative_term
+    control_input = proportional_term + integral_term + derivative_term
+    @info control_input
+    if abs(control_input) > max_control_input
+        @info "here"
+        integral_term = 0
+        control_input = sign(control_input) * max_control_input
+        @info control_input
+    end
+    @info "outside loop"
+    pid_state.prev_error = pid_state.error
+    @info pid_state.prev_error
+    pid_state.integral_error += pid_state.error
+    @info pid_state.integral_error
+
+    return control_input
 end
 
 
