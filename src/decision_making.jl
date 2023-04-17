@@ -75,14 +75,34 @@ function decision_making(localization_state_channel,
 
     pid_state_straight = PIDState(0.0, 0.0, 0.0)
     pid_state_curved = PIDState(0.0, 0.0, 0.0)
-
-    @async while isopen(socket)
+	
+	stopped = false # tells us if we have ever stopped at any point in the segment. Useful for stop signs
+    
+	@async while isopen(socket)
         sleep(0.005)
 
         if curr_segment.id == target_road_segment_id
             controls.target_speed = 0
             break
         end
+
+		if Int(curr_segment.lane_types[1]) == 3
+			distance_to_stop_sign = -1
+			if curr_segment.lane_boundaries[1].pt_b[1] == curr_segment.lane_boundaries[2].pt_b[1]
+				distance_to_stop_sign = abs(x.position[1] - curr_segment.lane_boundaries[1].pt_b[1])
+			else
+            	m, b = find_line_equation(curr_segment.lane_boundaries[1].pt_b, curr_segment.lane_boundaries[2].pt_b)
+            	distance_to_stop_sign = abs(m * x.position[1] - x.position[2] + b) / sqrt(m^2 + 1)
+			end
+			if distance_to_stop_sign < 10.0 && !stopped
+				controls.target_speed = 0
+				sleep(2)
+				controls.target_speed = 4
+				stopped = true
+			end
+		else
+			stopped = false
+		end
 
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
@@ -95,8 +115,9 @@ function decision_making(localization_state_channel,
             segments = get_segments_from_localization(x.position[1], x.position[2], map)
 
             for seg in segments
-                @info "considering seg $(seg.id)"
+                #@info "considering seg $(seg.id)"
                 if seg.id == path[next_path_index]
+					#stopped = false
                     curr_segment = seg
                     next_path_index += 1
                     #@info "chose $(curr_segment.id)"
@@ -104,8 +125,8 @@ function decision_making(localization_state_channel,
                 end
             end
 
-            @info "curr segment: $(curr_segment.id)"
-            @info "desired next segment: $(path[next_path_index])"
+            #@info "curr segment: $(curr_segment.id)"
+            #@info "desired next segment: $(path[next_path_index])"
 
             #@info "curr_segment: $(curr_segment.id)"
             #@info "new_segments: $(new_segments)"
@@ -136,7 +157,7 @@ function decision_making(localization_state_channel,
             # controls.target_speed = 8.0 #comment me out when ready
 
             #@info "target speed: $(controls.target_speed)"
-            @info "steering angle: $(controls.steering_angle)"
+            #@info "steering angle: $(controls.steering_angle)"
         end
 
         # NOTE: HOLD OFF ON PERCEPTION RELATED STUFF, lets figure out navigating with ground truth first
@@ -219,7 +240,7 @@ Update steering_angle if we deviate from the center localization_state. Lane_bou
 """
 function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straight, pid_state_curved)
     lane_curve = lane_boundaries[1].curvature != 0 # True if curved, false if straight, 0 if straight, negative if curve right, positive if curve left. 
-    @info "in function"
+    #@info "in function"
     lane_boundaries_left = lane_boundaries[1]
     lane_boundaries_right = lane_boundaries[2]
 
@@ -260,13 +281,13 @@ function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straig
         #     controls.steering_angle = 0
         # end
 
-        @info pid_state_straight
-        @info a - b
+        #@info pid_state_straight
+        #@info a - b
         pid_state_straight.error = a - b
-        @info pid_state_straight.error
+        #@info pid_state_straight.error
         control_input = pid_controller(pid_state_straight, kp, ki, kd, max_control_input)
-        @info control_input
-        @info pid_state_straight
+        #@info control_input
+        #@info pid_state_straight
 
         controls.steering_angle = control_input
 
@@ -330,24 +351,24 @@ PID controller
 """
 function pid_controller(pid_state, kp, ki, kd, max_control_input)
     proportional_term = kp * pid_state.error
-    @info proportional_term
+    #@info proportional_term
     integral_term = ki * (pid_state.integral_error + pid_state.error)
-    @info integral_term
+    #@info integral_term
     derivative_term = kd * (pid_state.error - pid_state.prev_error)
-    @info derivative_term
+    #@info derivative_term
     control_input = proportional_term + integral_term + derivative_term
-    @info control_input
+    #@info control_input
     if abs(control_input) > max_control_input
-        @info "here"
+        #@info "here"
         integral_term = 0
         control_input = sign(control_input) * max_control_input
-        @info control_input
+        #@info control_input
     end
-    @info "outside loop"
+    #@info "outside loop"
     pid_state.prev_error = pid_state.error
-    @info pid_state.prev_error
+    #@info pid_state.prev_error
     pid_state.integral_error += pid_state.error
-    @info pid_state.integral_error
+    #@info pid_state.integral_error
 
     return control_input
 end
