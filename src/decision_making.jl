@@ -1,7 +1,6 @@
 
-const CROSSED_CONFIRMED_COUNT = 5
-const v_step = 1.0
-const s_step = 0.314
+const default_speed = 10.0
+const turn_speed = 3.0
 
 
 """
@@ -24,7 +23,7 @@ function decision_making(localization_state_channel,
     controls)
 
     """REMOVE ME EVENTUALLY"""
-    target_road_segment_id = 101
+    target_road_segment_id = 94
     @info "Target: $target_road_segment_id"
 
 
@@ -37,14 +36,9 @@ function decision_making(localization_state_channel,
         sleep(0.01)
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
-
-            """TODO"""
-            # STEP 1 -> fix get_segments_from_localization - maybe fixed! could produce bugs once we get the car moving though.
             curr_segments = get_segments_from_localization(x.position[1], x.position[2], map)
             curr_segment = curr_segments[1]
 
-            """TODO"""
-            # STEP 2 -> fix get_path - maybe fixed!
             shortest_path = shortest_path_bfs(map, curr_segments[1].id, target_road_segment_id)
             min_dist = length(shortest_path)
             for i in eachindex(curr_segments[2:end])
@@ -62,111 +56,60 @@ function decision_making(localization_state_channel,
         end
     end
 
-    #@info x.position[1]
-    #@info x.position[2]
-    #@info curr_segment
-    #@info path
-    #@info "done with setup"
 
     next_path_index = 2
-    crossed_segment_count = 0
-    controls.target_speed = 4.0
-
     pid_state_straight = PIDState(0.0, 0.0, 0.0)
-    pid_state_curved = PIDState(0.0, 0.0, 0.0)
-
-    stopped = false # tells us if we have ever stopped at any point in the segment. Useful for stop signs
+    stopped = false
 
     @async while isopen(socket)
-        sleep(0.005)
-
-        counter = 0
-        if curr_segment.id == target_road_segment_id && length(curr_segment.lane_boundaries) == 3
-            controls.target_speed = 3
-            update_steering_angle(controls, x.position[1], x.position[2], [curr_segment.lane_boundaries[2], curr_segment.lane_boundaries[3]], pid_state_straight, pid_state_curved)
-            counter += 1
-
-            # halfway there yet with localization*
-            if (counter > 1000) # this counter determines how long we drive within the pullover area before we stop
-                controls.target_speed = 0
-                break
-            end
-            continue
-        end
-
-        if Int(curr_segment.lane_types[1]) == 3
-            distance_to_stop_sign = -1
-            if curr_segment.lane_boundaries[1].pt_b[1] == curr_segment.lane_boundaries[2].pt_b[1]
-                distance_to_stop_sign = abs(x.position[1] - curr_segment.lane_boundaries[1].pt_b[1])
-            else
-                m, b = find_line_equation(curr_segment.lane_boundaries[1].pt_b, curr_segment.lane_boundaries[2].pt_b)
-                distance_to_stop_sign = abs(m * x.position[1] - x.position[2] + b) / sqrt(m^2 + 1)
-            end
-            if distance_to_stop_sign < 10.0 && !stopped
-                controls.target_speed = 0
-                sleep(2)
-                controls.target_speed = 4
-                stopped = true
-            end
-        else
-            stopped = false
-        end
+        sleep(0.01)
 
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
-            #@info "x_position: $(x.position[1])"
-            #@info "y_position: $(x.position[2])"
-
-            """TODO"""
-            # STEP 4 -> see if we can get this working, supposed to verify when we cross into a new segment 
-            #           and update curr_seg and crossed_segment_index
             segments = get_segments_from_localization(x.position[1], x.position[2], map)
-
             for seg in segments
-                #@info "considering seg $(seg.id)"
                 if seg.id == path[next_path_index]
-                    #stopped = false
                     curr_segment = seg
-                    @info curr_segment
                     next_path_index += 1
-                    #@info "chose $(curr_segment.id)"
+                    @info "curr segment: $(curr_segment)"
                     break
                 end
             end
 
-            #@info "curr segment: $(curr_segment.id)"
-            #@info "desired next segment: $(path[next_path_index])"
 
-            #@info "curr_segment: $(curr_segment.id)"
-            #@info "new_segments: $(new_segments)"
 
-            # if !(curr_segment in new_segments)
-            #     #@info "new segment found"
-            #     if (crossed_segment_count < CROSSED_CONFIRMED_COUNT)
-            #         #@info "crossed_segment_count: $crossed_segment_count"
-            #         crossed_segment_count += 1
-            #     else
-            #         curr_segment = map[path[next_path_index]]
-            #         #@info "new curr_segment: $curr_segment"
-            #         # sanity check: checks that the next segment in the path is actually one of the one's our get_segment function found - syntax issues rn, not working
-            #         #if !(curr_segment.id in map(new_segment -> new_segment.id, new_segments))
-            #         #    @info "curr_segment not in new_segments"
-            #         #end
-            #         next_path_index += 1
-            #         crossed_segment_count = 0
-            #     end
-            # end
 
-            #@info "curr_segment: $(curr_segment.id)"
-            # STEP 5 -> fix get_steering_angle - maybe fixed!
-            update_steering_angle(controls, x.position[1], x.position[2], curr_segment.lane_boundaries, pid_state_straight, pid_state_curved)
+            if VehicleSim.stop_sign in curr_segment.lane_types
+                distance_to_stop_sign = -1
+                if curr_segment.lane_boundaries[1].pt_b[1] == curr_segment.lane_boundaries[2].pt_b[1]
+                    distance_to_stop_sign = abs(x.position[1] - curr_segment.lane_boundaries[1].pt_b[1])
+                else
+                    m, b = find_line_equation(curr_segment.lane_boundaries[1].pt_b, curr_segment.lane_boundaries[2].pt_b)
+                    distance_to_stop_sign = abs(m * x.position[1] - x.position[2] + b) / sqrt(m^2 + 1)
+                end
+                if distance_to_stop_sign < 15.0 && !stopped
+                    controls.target_speed = 0
+                    sleep(2)
+                    controls.target_speed = default_speed
+                    stopped = true
+                end
+            end
 
-            # STEP 6 -> fix get_target_speed
-            # controls.target_speed = get_target_speed(controls.target_speed, curr_seg.speed_limit)
-            # controls.target_speed = 8.0 #comment me out when ready
-
-            #@info "target speed: $(controls.target_speed)"
-            #@info "steering angle: $(controls.steering_angle)"
+            # pull out
+            if curr_segment.id == target_road_segment_id && VehicleSim.loading_zone in curr_segment.lane_types
+                controls.target_speed = 3
+                controls.steering_angle = -0.314
+                sleep(4)
+                controls.steering_angle = 0.314
+                sleep(4)
+                controls.steering_angle = 0
+                controls.target_speed = 0
+                break
+                # check if we are halfway there yet.
+                # update_steering_angle(controls, x.position[1], x.position[2], [curr_segment.lane_boundaries[2], curr_segment.lane_boundaries[3]], pid_state_straight)
+            else
+                update_steering_angle(controls, x.position[1], x.position[2], curr_segment.lane_boundaries, pid_state_straight)
+            end
         end
 
         # NOTE: HOLD OFF ON PERCEPTION RELATED STUFF, lets figure out navigating with ground truth first
@@ -175,8 +118,10 @@ function decision_making(localization_state_channel,
         #     p_state = fetch(perception_state_channel)
         # end
 
-    end
 
+        # steering 2*arcos(something) for yaw
+
+    end
 end
 
 """
@@ -247,9 +192,7 @@ end
 """
 Update steering_angle if we deviate from the center localization_state. Lane_boundaries is a vector of the current segment's lane boundaries. 
 """
-function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straight, pid_state_curved)
-    lane_curve = lane_boundaries[1].curvature != 0 # True if curved, false if straight, 0 if straight, negative if curve right, positive if curve left. 
-    #@info "in function"
+function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straight)
     lane_boundaries_left = lane_boundaries[1]
     lane_boundaries_right = lane_boundaries[2]
 
@@ -258,11 +201,8 @@ function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straig
     kd = 20 # derivative gain
     max_control_input = pi / 4
 
-    #@info x
-    #@info y
-    if !lane_curve
-        @info "straight"
-        controls.target_speed = 5
+    if lane_boundaries[1].curvature == 0
+        controls.target_speed = default_speed
         center_point = (lane_boundaries_left.pt_a + lane_boundaries_right.pt_a) / 2
         normal_vector = lane_boundaries_right.pt_a - center_point
         normal_vector /= norm(normal_vector)
@@ -270,41 +210,11 @@ function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straig
         a = dot(normal_vector, [x; y])
         b = dot(normal_vector, center_point)
 
-
-        # curr_angle = controls.steering_angle
-        # curr_speed = controls.target_speed #maybe update this to localization later
-        # vel_vec = [curr_speed * cos(curr_angle), curr_speed * sin(curr_angle)]
-        # vel_towards_center = dot(-normal_vector, vel_vec)
-
-
-        # left of center
-        # - faster we are approcahing center == larger this value is curr_speed * cos(curr_angle) == less right we turn == more left we turn == increment steering angle
-        # right of center
-        # - faster we are approcahing center == smaller this value is curr_speed * cos(curr_angle) == less left we turn == more right we turn == decrement steering angle
-
-        # horizontal_velocity = controls.target_speed * sin(controls.steering_angle)
-        #speed_dampening_factor = -0.0005
-
-        # if a != b
-        #     controls.steering_angle = 0.005 * (a - b) #+ (horizontal_velocity * speed_dampening_factor)
-        # else
-        #     controls.steering_angle = 0
-        # end
-
-        #@info pid_state_straight
-        #@info a - b
         pid_state_straight.error = a - b
-        #@info pid_state_straight.error
         control_input = pid_controller(pid_state_straight, kp, ki, kd, max_control_input)
-        #@info control_input
-        #@info pid_state_straight
-
         controls.steering_angle = control_input
-
     else
-        @info "curved"
-        controls.target_speed = 4
-        #@info "sup"
+        controls.target_speed = turn_speed
         left_r = abs(1 / lane_boundaries_left.curvature)
         right_r = abs(1 / lane_boundaries_right.curvature)
 
@@ -342,16 +252,6 @@ function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straig
             angle -= 0.1 * (lane_center_radius - dist_to_center)
         end
 
-
-        # pid_state_curved.error = dist_to_center
-        # @info pid_state_curved.error
-        # control_input = pid_controller(pid_state_curved, kp, ki, kd, max_control_input)
-        # @info control_input
-        # @info pid_state_curved
-
-        # controls.steering_angle = control_input
-
-
         controls.steering_angle = angle
     end
 end
@@ -362,24 +262,16 @@ PID controller
 """
 function pid_controller(pid_state, kp, ki, kd, max_control_input)
     proportional_term = kp * pid_state.error
-    #@info proportional_term
     integral_term = ki * (pid_state.integral_error + pid_state.error)
-    #@info integral_term
     derivative_term = kd * (pid_state.error - pid_state.prev_error)
-    #@info derivative_term
+
     control_input = proportional_term + integral_term + derivative_term
-    #@info control_input
     if abs(control_input) > max_control_input
-        #@info "here"
         integral_term = 0
         control_input = sign(control_input) * max_control_input
-        #@info control_input
     end
-    #@info "outside loop"
     pid_state.prev_error = pid_state.error
-    #@info pid_state.prev_error
     pid_state.integral_error += pid_state.error
-    #@info pid_state.integral_error
 
     return control_input
 end
@@ -390,14 +282,9 @@ Given two coordinates, returns the equation of the line in y = mx + b form.
 Note: tested and should work as intended
 """
 function find_line_equation(coord1, coord2)
-    # Unpack coordinates
     x1, y1 = coord1
     x2, y2 = coord2
-
-    # Calculate slope (m)
     m = (y2 - y1) / (x2 - x1)
-
-    # Calculate y-intercept (b)
     b = y1 - m * x1
 
     return [m, b]
@@ -411,7 +298,6 @@ function find_circle_center(p1, p2, r)
     avg = (p1 + p2) / 2
 
     # There are 2 possible circles to go through 2 points. We will need to figure out how to choose which one we want
-
     center_one = [avg[1] + sqrt(r^2 - (q / 2)^2) * (p1[2] - p2[2]) / q
         avg[2] + sqrt(r^2 - (q / 2)^2) * (p2[1] - p1[1]) / q]
 
