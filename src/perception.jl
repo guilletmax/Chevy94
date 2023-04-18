@@ -1,4 +1,9 @@
 
+### NOTES
+###
+### To test this code, just make sure @perception is called in project.jl and connect autonomous_client()
+###
+
 """
 Process model
 """
@@ -192,10 +197,16 @@ function jac_hx(x, ego_state, Δt, corner_id, camera_id, focal_len = 0.01, pixel
 	end
 
 	# Find J4 (Jacobian of convert_to_pixel)
+	### FIXME: Looking at my notes, should this just be [pixel_len 0
+	###													 0         pixel_len]?
+	### since convert_to_pixel does p' = s*p + s0
 	J4 = [1/pixel_len 0
 		  0 1/pixel_len]
 
 	# Find J5
+	### FIXME: I think this should have two different cases.
+	### Something like [1 0] for top/bottom and [0 1] for left/right
+	### I forget exactly where/when this was said, or what is meant by this.
 	J5 = [1 0]
 
 	return J5 * J4 * J3 * J2 * J1
@@ -219,11 +230,16 @@ function perception_filter(latest_localization_state, cam_measurements; μ=[0 0 
     for k in 2:length(cam_measurements)
 
 		camera_id = cam_measurements[k].camera_id
-
+		
+		### FIXME: It seems like Δt should come from the difference in time between two camera measurements
+		### However, when using this formula, it returns 0, possibly because the two measurements are too close
+		### in time to each other. How to resolve this?
 		# Δ = cam_measurements[k].time - prev_time
 		#@info "curr time: $(cam_measurements[k].time)"
-		Δ = meas_freq + meas_jitter * (2*rand(rng) - 1)
+		Δ = meas_freq + meas_jitter * (2*rand(rng) - 1) # Δ as used in HW4
 		@info "delta: $Δ"
+
+		### Calculations of jac_fx, f, and h.
 
         A = jac_fx(μ_prev, Δ)
 		@info "A: $A"
@@ -234,6 +250,7 @@ function perception_filter(latest_localization_state, cam_measurements; μ=[0 0 
 		h_result = h(μ̂, latest_localization_state, camera_id)
 		@info "h result: $h_result"
 
+		# Creates C as a 4x7 Jacobian, by calling jac_hx on each of the 4 3D corners which contribute to the bounding box
 		C = []
 		for corner_id in h_result.corners
 			push!(C, jac_hx(μ̂, latest_localization_state, Δ, corner_id, cam_measurements[k].camera_id))
@@ -241,14 +258,20 @@ function perception_filter(latest_localization_state, cam_measurements; μ=[0 0 
 		C = vcat(C...)
 		@info "C: $C"
 
+		### FIXME
+		### This is similar to something that was in HW4 - but was this used to determine the "true" measurements of the simulation?
+		### z_k is used in calculating μ, so not sure if this and μ should be changed.
 		zₖ = h_result.bboxes + sqrt(meas_var) * randn(rng, 4)
 		@info "z_k: $zₖ"
 		
+
+		### Equations from HW4 for updating Σ
         Σ̂ = A*Σ_prev*A'
 		@info "Sigma hat: $Σ̂"
         Σ = inv(inv(Σ̂) + C'*inv(meas_var)*C)
 		@info "sigma: $Σ"
 
+		### These equations are similar to those in HW4. I think d makes sense, but am a little confused by μ.
 		d = h_result.bboxes - C*μ̂
 		@info "d: $d"
         μ = Σ * (inv(Σ̂)*μ̂ + C'*inv(meas_var)*(zₖ-d))
@@ -260,6 +283,7 @@ function perception_filter(latest_localization_state, cam_measurements; μ=[0 0 
         push!(results, PerceptionType(μ, Σ))
 		@info results
 
+		## theoretically, this would be used to help set Δ
 		#prev_time = cam_measurements[k].time
     end
 
@@ -267,6 +291,8 @@ function perception_filter(latest_localization_state, cam_measurements; μ=[0 0 
 end
 
 
+### FIXME: I'm a little confused by how exactly the filter should run.
+### It seems like it's only running once when calling this function.
 """
 Goal: Estimate x_k = [p1 p2 θ v l w h]
 """
