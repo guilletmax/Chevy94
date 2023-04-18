@@ -205,7 +205,6 @@ end
 Extended Kalman Filter for the perception module
 """
 function perception_filter(latest_localization_state, cam_measurements; μ=[0 0 0 0 8 5 5], Σ=Diagonal([1^2, 1^2, 0.2^2, 0.5^2, 0.003^2, 0.003^2, 0.003^2]), meas_var=Diagonal([0.25,0.25,0.25,0.25]), proc_cov = Diagonal([0.2, 0.1]), dist_cov=Diagonal([0.3,0.3]), rng=MersenneTwister(5), output=true)
-	@info "inside filter"
     μs = [μ,]
     Σs = Matrix{Float64}[Σ,]
     zs = Vector{Float64}[]
@@ -214,25 +213,20 @@ function perception_filter(latest_localization_state, cam_measurements; μ=[0 0 
     Σ_prev = Σ
 
     results = PerceptionType[]
-	#@info results
 
-	prev_time = cam_measurements[1].time
-	#@info "prev time: $prev_time"
-	#@info length(cam_measurements)
+	# prev_time = cam_measurements[1].time
 
     for k in 2:length(cam_measurements)
 
-		Δ = cam_measurements[k].time - prev_time
+		# Δ = cam_measurements[k].time - prev_time
 		#@info "curr time: $(cam_measurements[k].time)"
+		Δ = 0.001
 		@info "delta: $Δ"
 
         A = jac_fx(μ_prev, Δ)
 		#@info "A: $A"
         μ̂ = f(μ_prev, Δ)
 		#@info "μ̂ $μ̂"
-
-		
-
 
         meas = h(μ̂, latest_localization_state, cam_measurements[k].camera_id)
 		#@info meas
@@ -249,8 +243,6 @@ function perception_filter(latest_localization_state, cam_measurements; μ=[0 0 
         Σ = inv(inv(Σ̂) + C'*inv(meas_var)*C)
 		#@info "sigma: $Σ"
 
-
-
         d = meas.bboxes - C*μ̂
 		#@info "d: $d"
         μ = Σ * (inv(Σ̂)*μ̂ + C'*inv(meas_var)*d)
@@ -260,8 +252,9 @@ function perception_filter(latest_localization_state, cam_measurements; μ=[0 0 
 	    Σ_prev = Σ
 
         push!(results, PerceptionType(μ, Σ))
+		@info results
 
-		prev_time = cam_measurements[k].time
+		#prev_time = cam_measurements[k].time
     end
 
     results
@@ -276,6 +269,7 @@ function perception(cam_meas_channel, localization_state_channel, perception_sta
     while true
         fresh_cam_meas = []
         while isready(cam_meas_channel)
+			#@info "cam_meas_channel is ready"
             meas = take!(cam_meas_channel)
 			if !isempty(meas.bounding_boxes)
             	push!(fresh_cam_meas, meas)
@@ -292,13 +286,17 @@ function perception(cam_meas_channel, localization_state_channel, perception_sta
 
 		if !isempty(sorted_cam_meas)
 			#@info "cam meas not empty, call filter"
-			perception_filter(latest_localization_state, sorted_cam_meas)
+			#@info "calling filter with $latest_localization_state and $sorted_cam_meas"
+			results = perception_filter(latest_localization_state, sorted_cam_meas)
+
+			for result in results	
+        		if isready(perception_state_channel)
+            		take!(perception_state_channel)
+        		end
+        		put!(perception_state_channel, result)
+			end
+			@info "done with one pass of filter"
 		end
 	
-		## TODO: need to store the results in a way that can be put on perception_state_channel
-        #if isready(perception_state_channel)
-        #    take!(perception_state_channel)
-        #end
-        #put!(perception_state_channel, perception_state)
     end
 end
