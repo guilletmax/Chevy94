@@ -28,12 +28,14 @@ function decision_making(localization_state_channel,
 
 
     x = -1
+    p = -1
     curr_segment = -1
     path = []
 
     is_setup = false
     while !is_setup
         sleep(0.05)
+
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
 
@@ -63,13 +65,26 @@ function decision_making(localization_state_channel,
     next_path_index = 2
     pid_state_straight = PIDState(0.0, 0.0, 0.0)
     stopped = false
+    target_speed = default_speed
+    steering_angle = 0.0
 
     @async while isopen(socket)
         sleep(0.001)
 
+        is_localization_updated = false
+        is_perception_updated = false
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
+            is_localization_updated = true
+        end
+        if (isready(perception_state_channel))
+            p = take!(perception_state_channel)
+            is_perception_updated = true
+        end
 
+
+
+        if (is_localization_updated)
             next_segment = map[path[next_path_index]]
             if in_segment(x.position[1], x.position[2], next_segment)
                 curr_segment = next_segment
@@ -104,19 +119,37 @@ function decision_making(localization_state_channel,
                 controls.target_speed = 0.0
                 break
             else
-                update_steering_angle(controls, x.position[1], x.position[2], curr_segment.lane_boundaries, pid_state_straight)
+                target_speed, steering_angle = update_steering(x.position[1], x.position[2], curr_segment.lane_boundaries, pid_state_straight)
             end
         end
 
-        # NOTE: HOLD OFF ON PERCEPTION RELATED STUFF, lets figure out navigating with ground truth first
-        # p_state = []
-        # if (isready(perception_state_channel))
-        #     p_state = fetch(perception_state_channel)
-        # end
+        if (is_perception_updated)
+            # [p1, p2, heading, velocity, height, lenght, width], cov]
+
+            our_vel = [curr_speed * sin(curr_angle), curr_speed * cos(curr_angle)]
+            enemy_speed = p[3]
+            enemy_angle = p[4]
+            enemy_vel = [enemy_speed * sin(enemy_angle), enemy_speed * cos(enemy_angle)]
+
+            epsilon = 0.1
+
+            if dot(our_vel, enemy_vel) - norm(our_vel) * norm(enemy_vel) < epsilon
+                target_speed = p[4] - 0.5
+            else
+                sleep(rand(1.0:0.1:5.0))
+                target_speed = 0
+                sleep(rand(1.0:0.1:5.0))
+                target_speed = 0.5
+                sleep(rand(1.0:0.1:5.0))
+                target_speed = default_speed
+            end
+        end
 
 
-        # steering 2*arcos(something) for yaw
-
+        if (is_localization_updated || is_perception_updated)
+            controls.target_speed = target_speed
+            controls.steering_angle = steering_angle
+        end
     end
 end
 
@@ -211,9 +244,9 @@ function get_segments_from_localization(x, y, map)
 end
 
 """
-Update steering_angle if we deviate from the center localization_state. Lane_boundaries is a vector of the current segment's lane boundaries. 
+Update steering if we deviate from the center localization_state. Lane_boundaries is a vector of the current segment's lane boundaries. 
 """
-function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straight)
+function update_steering(x, y, lane_boundaries, pid_state_straight)
     lane_boundaries_left = lane_boundaries[1]
     lane_boundaries_right = lane_boundaries[2]
 
@@ -223,7 +256,6 @@ function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straig
     max_control_input = pi / 4
 
     if lane_boundaries[1].curvature == 0
-        controls.target_speed = default_speed
         center_point = (lane_boundaries_left.pt_a + lane_boundaries_right.pt_a) / 2
         normal_vector = lane_boundaries_right.pt_a - center_point
         normal_vector /= norm(normal_vector)
@@ -233,9 +265,8 @@ function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straig
 
         pid_state_straight.error = a - b
         control_input = pid_controller(pid_state_straight, kp, ki, kd, max_control_input)
-        controls.steering_angle = control_input
+        return default_speed, control_input
     else
-        controls.target_speed = turn_speed
         left_r = abs(1 / lane_boundaries_left.curvature)
         right_r = abs(1 / lane_boundaries_right.curvature)
 
@@ -273,19 +304,7 @@ function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straig
             angle -= 0.1 * (lane_center_radius - dist_to_center)
         end
 
-        controls.steering_angle = angle
-
-        # distance_to_end = -1
-        # if lane_boundaries_left.pt_b[1] == lane_boundaries_right.pt_b[1]
-        #     distance_to_end = abs(x - lane_boundaries_left.pt_b[1])
-        # else
-        #     m, b = find_line_equation(lane_boundaries_left.pt_b, lane_boundaries_right.pt_b)
-        #     distance_to_end = abs(m * x - y + b) / sqrt(m^2 + 1)
-        # end
-        # if distance_to_end < 15
-        #     controls.steering_angle = 0.0
-        #     sleep(5)
-        # end
+        return turn_speed, angle
     end
 end
 
