@@ -1,5 +1,5 @@
 
-const default_speed = 10.0
+const default_speed = 8.0
 const turn_speed = 3.0
 
 
@@ -23,7 +23,7 @@ function decision_making(localization_state_channel,
     controls)
 
     """REMOVE ME EVENTUALLY"""
-    target_road_segment_id = 94
+    target_road_segment_id = 101
     @info "Target: $target_road_segment_id"
 
 
@@ -33,9 +33,11 @@ function decision_making(localization_state_channel,
 
     is_setup = false
     while !is_setup
-        sleep(0.01)
+        sleep(0.05)
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
+
+            # GET SEGMENTS FROM LOCALIZATION DOESN'T ALWAYS WORK (think breaks on 101) NEED TO FIX
             curr_segments = get_segments_from_localization(x.position[1], x.position[2], map)
             curr_segment = curr_segments[1]
 
@@ -52,6 +54,7 @@ function decision_making(localization_state_channel,
             end
 
             path = shortest_path
+            @info path
             is_setup = true
         end
     end
@@ -62,22 +65,17 @@ function decision_making(localization_state_channel,
     stopped = false
 
     @async while isopen(socket)
-        sleep(0.01)
+        sleep(0.001)
 
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
-            segments = get_segments_from_localization(x.position[1], x.position[2], map)
-            for seg in segments
-                if seg.id == path[next_path_index]
-                    curr_segment = seg
-                    next_path_index += 1
-                    @info "curr segment: $(curr_segment)"
-                    break
-                end
+
+            next_segment = map[path[next_path_index]]
+            if in_segment(x.position[1], x.position[2], next_segment)
+                curr_segment = next_segment
+                next_path_index += 1
+                @info "curr segment: $(curr_segment)"
             end
-
-
-
 
             if VehicleSim.stop_sign in curr_segment.lane_types
                 distance_to_stop_sign = -1
@@ -123,6 +121,31 @@ function decision_making(localization_state_channel,
 
     end
 end
+
+
+"""
+Returns boolean indicating that we are in segment
+"""
+function in_segment(x, y, segment)
+
+    x_values = []
+    y_values = []
+    for b in segment.lane_boundaries
+        push!(x_values, b.pt_a[1], b.pt_b[1])
+        push!(y_values, b.pt_a[2], b.pt_b[2])
+    end
+
+    x_min = minimum(x_values)
+    y_min = minimum(y_values)
+    x_max = maximum(x_values)
+    y_max = maximum(y_values)
+
+    if (x >= x_min && x <= x_max && y >= y_min && y <= y_max)
+        return true
+    end
+    return false
+end
+
 
 """
 Get segment ID from localization x and y state and map
@@ -253,6 +276,18 @@ function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straig
         end
 
         controls.steering_angle = angle
+
+        # distance_to_end = -1
+        # if lane_boundaries_left.pt_b[1] == lane_boundaries_right.pt_b[1]
+        #     distance_to_end = abs(x - lane_boundaries_left.pt_b[1])
+        # else
+        #     m, b = find_line_equation(lane_boundaries_left.pt_b, lane_boundaries_right.pt_b)
+        #     distance_to_end = abs(m * x - y + b) / sqrt(m^2 + 1)
+        # end
+        # if distance_to_end < 15
+        #     controls.steering_angle = 0.0
+        #     sleep(5)
+        # end
     end
 end
 
