@@ -1,6 +1,6 @@
 
 const default_speed = 8.0
-const turn_speed = 3.0
+const turn_speed = 5.0
 
 
 """
@@ -23,7 +23,7 @@ function decision_making(localization_state_channel,
     controls)
 
     """REMOVE ME EVENTUALLY"""
-    target_road_segment_id = 101
+    target_road_segment_id = 94
     @info "Target: $target_road_segment_id"
 
 
@@ -85,7 +85,7 @@ function decision_making(localization_state_channel,
                     m, b = find_line_equation(curr_segment.lane_boundaries[1].pt_b, curr_segment.lane_boundaries[2].pt_b)
                     distance_to_stop_sign = abs(m * x.position[1] - x.position[2] + b) / sqrt(m^2 + 1)
                 end
-                if distance_to_stop_sign < 15.0 && !stopped
+                if distance_to_stop_sign < 13.0 && !stopped
                     controls.target_speed = 0
                     sleep(2)
                     controls.target_speed = default_speed
@@ -95,16 +95,14 @@ function decision_making(localization_state_channel,
 
             # pull out
             if curr_segment.id == target_road_segment_id && VehicleSim.loading_zone in curr_segment.lane_types
-                controls.target_speed = 3
-                controls.steering_angle = -0.314
-                sleep(4)
-                controls.steering_angle = 0.314
-                sleep(4)
-                controls.steering_angle = 0
-                controls.target_speed = 0
+                controls.target_speed = 3.5
+                controls.steering_angle = -0.4
+                sleep(3.5)
+                controls.steering_angle = 0.4
+                sleep(3.5)
+                controls.steering_angle = 0.0
+                controls.target_speed = 0.0
                 break
-                # check if we are halfway there yet.
-                # update_steering_angle(controls, x.position[1], x.position[2], [curr_segment.lane_boundaries[2], curr_segment.lane_boundaries[3]], pid_state_straight)
             else
                 update_steering_angle(controls, x.position[1], x.position[2], curr_segment.lane_boundaries, pid_state_straight)
             end
@@ -219,9 +217,9 @@ function update_steering_angle(controls, x, y, lane_boundaries, pid_state_straig
     lane_boundaries_left = lane_boundaries[1]
     lane_boundaries_right = lane_boundaries[2]
 
-    kp = 0.5 # proportional gain
+    kp = 0.1 # proportional gain
     ki = 0.01 # integral gain
-    kd = 20 # derivative gain
+    kd = 15 # derivative gain
     max_control_input = pi / 4
 
     if lane_boundaries[1].curvature == 0
