@@ -204,7 +204,7 @@ end
 """
 Extended Kalman Filter for the perception module
 """
-function perception_filter(latest_localization_state, cam_measurements; μ=[0 0 0 0 8 5 5], Σ=Diagonal([1^2, 1^2, 0.2^2, 0.5^2, 0.003^2, 0.003^2, 0.003^2]), meas_var=Diagonal([0.25,0.25,0.25,0.25]), proc_cov = Diagonal([0.2, 0.1]), dist_cov=Diagonal([0.3,0.3]), rng=MersenneTwister(5), output=true)
+function perception_filter(latest_localization_state, cam_measurements; μ=[0 0 0 0 8 5 5], Σ=Diagonal([1^2, 1^2, 0.2^2, 0.5^2, 0.003^2, 0.003^2, 0.003^2]), meas_var=Diagonal([0.25,0.25,0.25,0.25]), proc_cov = Diagonal([0.2, 0.1]), dist_cov=Diagonal([0.3,0.3]), rng=MersenneTwister(5), output=true, meas_freq=0.5, meas_jitter=0.025)
     μs = [μ,]
     Σs = Matrix{Float64}[Σ,]
     zs = Vector{Float64}[]
@@ -218,34 +218,40 @@ function perception_filter(latest_localization_state, cam_measurements; μ=[0 0 
 
     for k in 2:length(cam_measurements)
 
+		camera_id = cam_measurements[k].camera_id
+
 		# Δ = cam_measurements[k].time - prev_time
 		#@info "curr time: $(cam_measurements[k].time)"
-		Δ = 0.001
+		Δ = meas_freq + meas_jitter * (2*rand(rng) - 1)
 		@info "delta: $Δ"
 
         A = jac_fx(μ_prev, Δ)
-		#@info "A: $A"
-        μ̂ = f(μ_prev, Δ)
-		#@info "μ̂ $μ̂"
+		@info "A: $A"
 
-        meas = h(μ̂, latest_localization_state, cam_measurements[k].camera_id)
-		#@info meas
+        μ̂ = f(μ_prev, Δ)
+		@info "μ̂ $μ̂"
+
+		h_result = h(μ̂, latest_localization_state, camera_id)
+		@info "h result: $h_result"
 
 		C = []
-		for corner_id in meas.corners
+		for corner_id in h_result.corners
 			push!(C, jac_hx(μ̂, latest_localization_state, Δ, corner_id, cam_measurements[k].camera_id))
 		end
 		C = vcat(C...)
-		#@info "C: $C"
+		@info "C: $C"
 
+		zₖ = h_result.bboxes + sqrt(meas_var) * randn(rng, 4)
+		@info "z_k: $zₖ"
+		
         Σ̂ = A*Σ_prev*A'
-		#@info "Sigma hat: $Σ̂"
+		@info "Sigma hat: $Σ̂"
         Σ = inv(inv(Σ̂) + C'*inv(meas_var)*C)
-		#@info "sigma: $Σ"
+		@info "sigma: $Σ"
 
-        d = meas.bboxes - C*μ̂
-		#@info "d: $d"
-        μ = Σ * (inv(Σ̂)*μ̂ + C'*inv(meas_var)*d)
+		d = h_result.bboxes - C*μ̂
+		@info "d: $d"
+        μ = Σ * (inv(Σ̂)*μ̂ + C'*inv(meas_var)*(zₖ-d))
 		@info "μ: $μ"
 
 	    μ_prev = μ
