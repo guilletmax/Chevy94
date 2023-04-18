@@ -36,14 +36,23 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
     msg = deserialize(socket)
     @info msg
 
-    @async while isopen(socket)
+    errormonitor(@async while true
         sleep(0.001)
-        state_msg = deserialize(socket)
-        measurements = state_msg.measurements
-        target_map_segment = state_msg.target_segment
-        ego_vehicle_id = state_msg.vehicle_id
-
-        for meas in measurements
+    	local measurement_msg
+        received = false
+        while true
+            @async eof(socket)
+            if bytesavailable(socket) > 0
+                measurement_msg = deserialize(socket)
+                received = true
+            else
+                break
+            end
+        end
+        !received && continue
+        target_map_segment = measurement_msg.target_segment
+        ego_vehicle_id = measurement_msg.vehicle_id
+        for meas in measurement_msg.measurements
             if meas isa GPSMeasurement
                 !isfull(gps_channel) && put!(gps_channel, meas)
             elseif meas isa IMUMeasurement
@@ -53,16 +62,15 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
             elseif meas isa GroundTruthMeasurement
                 !isfull(gt_channel) && put!(gt_channel, meas)
             end
-            # @info "meas: $meas"
-        end
-    end
+		end
+    end)
 
     controlled = true
     controls = Controls(0.0, 0.0)
 
     #@async localize(gps_channel, imu_channel, localization_state_channel)
-    #@async perception(cam_channel, localization_state_channel, perception_state_channel)
-    @async decision_making(gt_channel, perception_state_channel, map, socket, controls)
+    @async perception(cam_channel, gt_channel, perception_state_channel)
+    #@async decision_making(gt_channel, perception_state_channel, map, socket, controls)
 
     while controlled && isopen(socket)
 		sleep(0.01)

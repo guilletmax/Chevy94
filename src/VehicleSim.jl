@@ -31,6 +31,7 @@ include("perception.jl")
 include("decision_making.jl")
 include("project.jl")
 
-export server, shutdown!, keyboard_client, autonomous_client, shortest_path_bfs, get_segments_from_localization
+export server, shutdown!, keyboard_client, autonomous_client, shortest_path_bfs, get_segments_from_localization, h, jac_hx, get_3d_bbox_corners, jac_fx, f, perception_filter
+# get rid of functions not needed to be run in terminal (these are used for testing)
 
 end
