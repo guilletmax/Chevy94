@@ -1,4 +1,3 @@
-
 # @testset "derivative tests" begin
 #     rng = MersenneTwister(1)
 #     for i = 1:10
@@ -207,14 +206,16 @@ end
 #How should I pass in the imu and gps measurements??? A little confused about the initialization steps... not sure what to do here
 #rule of thumb: describe what kind of error you would expect in model you are using - quaternion: normalize to 1 (4 element vector with norm 1)
 ##can find for Ez elsewhere
-function localize_filter(; μ=zeros(13), Σ=Diagonal([5, 5, 3, 1.0, 1, 1, 1, 0.4, 0.4, 0.4, 0.2, 0.2, 0.2]), x0=zeros(13), Σ_z=Diagonal([0.25, 0.25, 0, 0, 0, 0, 0, 0.25]), output=true, fresh_meas)
+
+#QUESTION: Difference between x0 and μ
+function localize_filter(; μ=zeros(13), Σ=Diagonal([5, 5, 3, 1.0, 1, 1, 1, 0.4, 0.4, 0.4, 0.2, 0.2, 0.2]), x0=zeros(13), Σ_gps=Diagonal([1, 1]), Σ_imu=Diagonal([0.1, 0.1, 0.1, 0.1, 0.1, 0.1]), output=true, fresh_meas)
     # u_constant = randn(rng) * [5.0, 0.2]
     # u_prev = zeros(2)
     # gt_states = [x0,] # ground truth states that we will try to estimate
     timesteps = []
-    μs = [μ,]
-    Σs = Matrix{Float64}[Σ,]
-    zs = Vector{Float64}[]
+    μs = [μ,] #initialize
+    Σs = Matrix{Float64}[Σ,] #guess covariance
+    zs = Vector{Float64}[] #zs is our measurement
     x_prev = x0
     μ_prev = μ
     Σ_prev = Σ # change
@@ -225,12 +226,23 @@ function localize_filter(; μ=zeros(13), Σ=Diagonal([5, 5, 3, 1.0, 1, 1, 1, 0.4
         Δ = fresh_meas[k] - fresh_meas[k-1] #todo - do i keep?
         xₖ = rigid_body_dynamics(x_prev[1:3], x_prev[4:7], x_prev[8:10], x_prev[11:13], Δ)
         x_prev = xₖ
-        zₖ = [fresh_gps_meas[k]; 0; 0; 0; 0; 0; fresh_gps_meas[k]] #Z_k is the fresh measu 13x1 TODO: do i keep this: + sqrt(meas_var) * randn(rng, 2)
-
+        zₖ = fresh_meas[k]
+        if zₖ isa GPSMeasurement
+            # h = [h_gps(μ̂); zeros(13); h_imu(μ̂)]
+            # C = [h_gps_jacobian(μ̂); zeros(5, 13); h_imu_jacobian(μ̂)] #13x13
+            h = h_gps(μ̂)
+            C = h_gps_jacobian(μ̂)
+            Σ_z = Σ_gps
+        elseif zₖ isa IMUMeasurement
+            h = h_imu(μ̂)
+            C = h_imu_jacobian(μ̂)
+            Σ_z = Σ_imu
+        end
+        #Z_k is the fresh measu 13x1 TODO: do i keep this: + sqrt(meas_var) * randn(rng, 2)
+        # @info "Here lakwdjfoldjflksdf$(Σ_z)"
+        # println("HERE is a println ")
         μ̂ = rigid_body_dynamics(μ_prev[1:3], μ_prev[4:7], μ_prev[8:10], μ_prev[11:13], Δ)# 13x1 f(μₖ₋₁, mₖ, 0, Δ)
         A = f_jacobian(μ_prev, Δ) #13x13 ∇ₓf(μₖ₋₁, mₖ, 0, Δ),
-        C = [h_gps_jacobian(μ̂); zeros(5, 13); h_imu_jacobian(μ̂)] #13x13
-        h = [h_gps(μ̂); zeros(13); h_imu(μ̂)]
         d = h - C * μ̂
         Σ̂ = A * Σ_prev * A'   # define another type of sigma covariance for sigma process 13x13 * 13x13 * 13x13 = 13x13
         Σ_k = (Σ̂^(-1) + C' * (Σ_z)^(-1) * C)^(-1)#Σ_z = 13x13 --> 13x13 * 13x13 * 13x13 = 13x13
@@ -296,7 +308,7 @@ function localize(gps_channel, imu_channel, localization_state_channel)
         sort_meas_array(measures) #sort by time
         Tbody = get_body_transform(q_body, xyz_body)
         xyz_gps = Tbody * [gps_loc_body; 1]
-        init_mu = [xyz[1] xyz[2] xyz[3]]
+        init_mu = [xyz[1] xyz[2] xyz[3] 0 0 0 0 0 0 0 0 0 0]
         #orientation: what part of the map are you on, what lane segment, which direction is it facing and that will tell us the orientation 
         # process measurements
         (; μs, Σs) = localize_filter(; μ=init_mu, num_steps=5, output=false, fresh_meas=measures)
