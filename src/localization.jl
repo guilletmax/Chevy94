@@ -1,52 +1,4 @@
 
-# @testset "derivative tests" begin
-#     rng = MersenneTwister(1)
-#     for i = 1:10
-#         x = randn(rng, 4)
-#         u = randn(rng, 2)
-#         ω = randn(rng, 2)
-#         Δ = 0.1
-
-#         xx = rigid_body_dynamics(x, u, ω, Δ)
-#         Jx = f_jacobian(x, u, ω, Δ)
-#         Jxn = similar(Jx)
-#         Jun = similar(Ju)
-#         Jωn = similar(Ju)
-#         for j = 1:4
-#             ej = zeros(4)
-#             ej[j] = 1e-6
-#             Jxn[:, j] = (HW4.f(x + ej, u, ω, Δ) - xx) / 1e-6
-#         end
-#         for j = 1:2
-#             ej = zeros(2)
-#             ej[j] = 1e-6
-#             Jun[:, j] = (HW4.f(x, u + ej, ω, Δ) - xx) / 1e-6
-#         end
-#         for j = 1:2
-#             ej = zeros(2)
-#             ej[j] = 1e-6
-#             Jωn[:, j] = (HW4.f(x, u, ω + ej, Δ) - xx) / 1e-6
-#         end
-#         zz_gps = h_gps(x)
-#         zz_imu = h_imu(x)
-#         Jxh_gps = h_gps(x)
-#         Jxh_imu = h_imu(x)
-#         Jxhn = similar(Jxh)
-#         for j = 1:4
-#             ej = zeros(4)
-#             ej[j] = 1e-6
-#             Jxhn[:, j] = (HW4.h(x + ej) - zz) / 1e-6
-#         end
-#         @test isapprox(Jx, Jxn; atol=1e-6)
-#         @test isapprox(Ju, Jun; atol=1e-6)
-#         @test isapprox(Jω, Jωn; atol=1e-6)
-#         @test isapprox(Jxh, Jxhn; atol=1e-5)
-#     end
-# end
-
-function test_jac()
-    x = randn(n)
-end
 function h_gps(x)
     #gps_loc_body is 3x1
     #Tbody is 3x4
@@ -57,7 +9,7 @@ function h_gps(x)
     Tbody = get_body_transform(q_body, xyz_body)  #transform of the body
     xyz_gps = Tbody * [gps_loc_body; 1] #gps in map frame is 3x1
     #how does tbody change wrt to q_body and xyz_body
-    return xyz_gps[1:2]' #2x1
+    return xyz_gps[1:2] #2x1
 end
 
 function h_gps_jacobian(x)
@@ -110,7 +62,7 @@ function h_imu_jacobian(x)
         p[2]*R[3, 1]-p[3]*R[2, 1] p[2]*R[3, 2]-p[3]*R[2, 2] p[2]*R[3, 3]-p[3]*R[2, 3]
         p[1]*R[3, 1]-p[3]*R[1, 1] p[1]*R[3, 2]-p[3]*R[1, 2] p[1]*R[3, 3]-p[3]*R[1, 3]
         p[1]*R[2, 1]-p[2]*R[1, 1] p[1]*R[2, 2]-p[2]*R[1, 2] p[1]*R[2, 3]-p[2]*R[1, 3]]
-    println(jac_v_imu_w_bod)
+    # println(jac_v_imu_w_bod)
     # jac_ω_imu = R
     # jac_v_imu = [R p[1:3, 1:3] * ω_imu * R + R * p]
     # [v_imu; ω_imu] 6x1
@@ -185,7 +137,7 @@ function f_jacobian(x, Δt)
     end
 
     jac_nq_wrt_r = [jac_s_wrt_r; jac_v_wrt_r] #this is w.r.t r with dimensions 4x3 
-    println("jac_nq_wrt_r: ", size(jac_nq_wrt_r))
+    # println("jac_nq_wrt_r: ", size(jac_nq_wrt_r))
     jac_new_position = [[x[1] 0 0; 0 x[2] 0; 0 0 x[3]] zeros(3, 4) [Δt 0 0; 0 Δt 0; 0 0 Δt] zeros(3, 3)]
     jac_new_quat = [zeros(4, 3) jac_nq_wrt_quat zeros(4, 3) jac_nq_wrt_r] #4x13
     jac_new_velocity = [zeros(3, 7) [1 0 0; 0 1 0; 0 0 1] zeros(3, 3)]
@@ -200,125 +152,163 @@ function f_jacobian(x, Δt)
 
 end
 
-#what are good values for Epsilon
-#does a control variable exist
-#Line 187
-#Line 184
-#How should I pass in the imu and gps measurements??? A little confused about the initialization steps... not sure what to do here
-#rule of thumb: describe what kind of error you would expect in model you are using - quaternion: normalize to 1 (4 element vector with norm 1)
-##can find for Ez elsewhere
-function localize_filter(; μ=zeros(13), Σ=Diagonal([5, 5, 3, 1.0, 1, 1, 1, 0.4, 0.4, 0.4, 0.2, 0.2, 0.2]), x0=zeros(13), Σ_z=Diagonal([0.25, 0.25, 0, 0, 0, 0, 0, 0.25]), output=true, fresh_meas)
-    # u_constant = randn(rng) * [5.0, 0.2]
-    # u_prev = zeros(2)
-    # gt_states = [x0,] # ground truth states that we will try to estimate
-    timesteps = []
-    μs = [μ,]
-    Σs = Matrix{Float64}[Σ,]
-    zs = Vector{Float64}[]
-    x_prev = x0
-    μ_prev = μ
-    Σ_prev = Σ # change
 
-    #based off of fresh mesh: sort based on time and then loop
+function localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, measurements)
+    t = last(measurements).time
+    for k in 1:length(measurements)
+        Δ = -1
+        if k == 1
+            Δ = measurements[k].time - t_prev
+        else
+            Δ = measurements[k].time - measurements[k-1].time
+        end
+        μ̂ = rigid_body_dynamics(μ_prev[1:3], μ_prev[4:7], μ_prev[8:10], μ_prev[11:13], Δ) # 13 x 1
+        @info "μ̂: $μ̂"
 
-    for k = 2:length(fresh_meas)
-        Δ = fresh_meas[k] - fresh_meas[k-1] #todo - do i keep?
-        xₖ = rigid_body_dynamics(x_prev[1:3], x_prev[4:7], x_prev[8:10], x_prev[11:13], Δ)
-        x_prev = xₖ
-        zₖ = [fresh_gps_meas[k]; 0; 0; 0; 0; 0; fresh_gps_meas[k]] #Z_k is the fresh measu 13x1 TODO: do i keep this: + sqrt(meas_var) * randn(rng, 2)
+        h = -1
+        C = -1
+        Σ_z = -1
 
-        μ̂ = rigid_body_dynamics(μ_prev[1:3], μ_prev[4:7], μ_prev[8:10], μ_prev[11:13], Δ)# 13x1 f(μₖ₋₁, mₖ, 0, Δ)
-        A = f_jacobian(μ_prev, Δ) #13x13 ∇ₓf(μₖ₋₁, mₖ, 0, Δ),
-        C = [h_gps_jacobian(μ̂); zeros(5, 13); h_imu_jacobian(μ̂)] #13x13
-        h = [h_gps(μ̂); zeros(13); h_imu(μ̂)]
-        d = h - C * μ̂
+        zₖ = measurements[k]
+        if zₖ isa GPSMeasurement
+            # @info "it's a GPS!"
+            zₖ = [zₖ.lat, zₖ.long]
+            h = h_gps(μ̂) # 2 x 1
+            C = h_gps_jacobian(μ̂) # 2 x 13
+            Σ_z = Σ_gps # 2 x 2
+        elseif zₖ isa IMUMeasurement
+            # @info "it's an IMU!"
+            zₖ = vcat(zₖ.linear_vel, zₖ.angular_vel)
+            h = h_imu(μ̂) # 6 x 1
+            C = h_imu_jacobian(μ̂) # 6 x 13
+            Σ_z = Σ_imu # 6 x 6
+        end
+        @info "h: $h"
+        @info "C: $C"
+        @info "Σ_z: $Σ_z"
+
+        A = f_jacobian(μ_prev, Δ) # 13 x 13
+        @info "A: $A"
+        d = h - C * μ̂ # ( 2 x 1 || 6 x 1 ) - ( ( 2 x 13 || 6 x 13 ) * 13 x 1 ) = ( 2 x 1 || 6 x 1 )
+        @info "d: $d"
         Σ̂ = A * Σ_prev * A'   # define another type of sigma covariance for sigma process 13x13 * 13x13 * 13x13 = 13x13
-        Σ_k = (Σ̂^(-1) + C' * (Σ_z)^(-1) * C)^(-1)#Σ_z = 13x13 --> 13x13 * 13x13 * 13x13 = 13x13
-        μ_k = Σ_k * (Σ̂^(-1) * μ̂ + C' * (Σ_z)^(-1) * (zₖ - d)) #13x13 * (13x1 + 13x13*13x13*13x1) = 13x13*13x1 = 13x1
-        #h_mu^
+        @info "Σ̂: $Σ̂"
+        Σ_k = (Σ̂^(-1) + C' * (Σ_z)^(-1) * C)^(-1) # ( 13 x 13 + ( 13 x 2 || 13 x 6 ) * ( 2 x 2 || 6 x 6 ) * ( 2 x 13 || 6 x 13 ) ) = 13 x 13
+        @info "Σ_k: $Σ_k"
+        μ_k = Σ_k * (Σ̂^(-1) * μ̂ + C' * (Σ_z)^(-1) * (zₖ - d)) # ( 13 x 13 * ( 13 x 13 * 13 x 1 + 13 x 6 * 6 x 6 * 6 x 1 ) ) = 13 x 1
+        @info "μ_k: $μ_k"
         μ_prev = μ_k
         Σ_prev = Σ_k
-        push!(μs, μ_k)
-        push!(Σs, Σ_k)
-        push!(zs, zₖ)
-        push!(gt_states, xₖ)
-        push!(timesteps, Δ)
     end
-
-    (; μs, Σs)
+    μ = μ_prev
+    Σ = Σ_prev
+    return μ, Σ, t
 end
 
-# uₖ = u_constant
-# mₖ = uₖ + sqrt(proc_cov) * randn(rng, 2) # Noisy IMU measurement.
-# ω_true = sqrt(dist_cov) * randn(rng, 2)
-# u_prev = uₖ
-# TODO : perform update on Σ, μ
-#c = f(x_prev,uₖ,0,Δ) - A*x_prev - B*uₖ - L*0 #f(μₖ₋₁, mₖ, 0, Δ) - Aμₖ₋₁ - Bmₖ - L*0
-# B = (μ_prev, mₖ, zeros(2), Δ)#∇ᵤf(μₖ₋₁, mₖ, 0, Δ),
-# println("HERE IS w:",ω_true, zeros(2) )
-# println("inside of for loop here is A", A)
 
-# L = jac_fu(μ_prev, mₖ, zeros(2), Δ)
-# d = h(μ̂) - C * μ̂
-# if output
-#     println("Ttimestep ", k, ":")
-#     println("   Ground truth (x,y,z): ", xₖ[1:3])
-#     println("   Estimated (x,y,z): ", μ_k[1:3])
-#     println("   Ground truth quat: ", xₖ[4:7])
-#     println("   Estimated quat: ", μ_k[4:7])
-#     println("   Ground truth v: ", xₖ[8:10])
-#     println("   estimated v: ", μ_k[8:10])
-#     println("   Ground truth w: ", xₖ[11:13])
-#     println("   estimated w: ", μ_k[11:13])
-#     println("   measurement received: ", zₖ)
-#     println("   Uncertainty measure (det(cov)): ", det(Σ_k))
-# end
-
-#how is localize called - how often will it return?
-#what do I do about time steps?
 function localize(gps_channel, imu_channel, localization_state_channel)
-    # Set up algorithm / initialize variables
+    fresh_gps_meas = []
+    fresh_imu_meas = []
+
+    μ_prev = -1
+    Σ_prev = -1
+    t_prev = -1
+
+    setup = false
+    while !setup
+        sleep(0.001)
+        gps_meas = -1
+        if isready(gps_channel)
+            gps_meas = take!(gps_channel)
+        else
+            continue
+        end
+        #default_quaternion = [1, 0, 0, 0]
+        #init_x = gps_meas.long
+        #init_y = gps_meas.lat
+        init_z = 3.2428496460474134 #grabbed from first gt measurement, can keep
+        init_t = gps_meas.time
+
+        #grabbed from first gt measurement
+        init_x = -91.66655951015551
+        init_y = -74.99983643946713
+        default_quaternion = [0.7071088264608639, -0.0002105419891602536, 0.0002601612999704231, 0.7071046567017563]
+        default_velocity = [0.0030428557537161595, -0.0021233391786533917, -0.1077977346828422]
+        default_angular_velocity = [0.0013151135040768936, 0.012796697753244386, -0.00010083551663550507]
+
+        μ_prev = [init_x, init_y, init_z, default_quaternion[1], default_quaternion[2], default_quaternion[3], default_quaternion[4], default_velocity[1], default_velocity[2], default_velocity[3], default_angular_velocity[1], default_angular_velocity[2], default_angular_velocity[3]]
+        Σ_prev = Diagonal([5, 5, 3, 1, 1, 1, 1, 0.4, 0.4, 0.4, 0.2, 0.2, 0.2])
+        t_prev = init_t
+
+        setup = true
+        @info "localiation setup"
+        @info "μ_prev: $μ_prev"
+        @info "Σ_prev: $Σ_prev"
+        @info "t_prev: $t_prev"
+
+        localization_state = LocalizationType(μ_prev[1:3])
+        put!(localization_state_channel, localization_state)
+    end
+
+    # let decision_making start up with initial gps reading
+    sleep(1)
     while true
-        fresh_gps_meas = []
+        sleep(0.00001)
         while isready(gps_channel)
+            sleep(0.000001)
             meas = take!(gps_channel)
-            push!(fresh_gps_meas, meas)
+            if meas.time >= t_prev
+                push!(fresh_gps_meas, meas)
+            end
         end
-        fresh_imu_meas = []
         while isready(imu_channel)
+            sleep(0.000001)
             meas = take!(imu_channel)
-            push!(fresh_imu_meas, meas)
+            if meas.time >= t_prev
+                push!(fresh_imu_meas, meas)
+            end
         end
 
-        #wait and get first gps measurement and use that to inform mu zero
+        if isempty(fresh_gps_meas) || isempty(fresh_imu_meas)
+            continue
+        end
 
-        measures = [fresh_imu_meas fresh_gps_meas]
-        sort_meas_array(measures) #sort by time
-        Tbody = get_body_transform(q_body, xyz_body)
-        xyz_gps = Tbody * [gps_loc_body; 1]
-        init_mu = [xyz[1] xyz[2] xyz[3]]
-        #orientation: what part of the map are you on, what lane segment, which direction is it facing and that will tell us the orientation 
-        # process measurements
-        (; μs, Σs) = localize_filter(; μ=init_mu, num_steps=5, output=false, fresh_meas=measures)
-        localization_state = LocalizationType(μs, Σs)
+        measurements = vcat(fresh_imu_meas, fresh_gps_meas)
+        sort!(measurements, by=x -> x.time)
+        @info "length of measurements: $(length(measurements))"
+
+        # struct GPSMeasurement <: Measurement
+        #     time::Float64
+        #     lat::Float64
+        #     long::Float64
+        # end
+
+        Σ_gps = Diagonal([1, 1])
+        Σ_imu = Diagonal([0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
+
+        @info "μ_prev: $μ_prev"
+        @info "Σ_prev: $Σ_prev"
+        @info "t_prev: $t_prev"
+        @info "Σ_gps: $Σ_gps"
+        @info "Σ_imu: $Σ_imu"
+        @info "measurements: $measurements"
+        μ, Σ, t = localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, measurements)
+        @info "localize filter results:"
+        @info "μ: $μ"
+        @info "Σ: $Σ"
+        @info "t: $t"
+
+        localization_state = LocalizationType(μ[1:3])
         if isready(localization_state_channel)
             take!(localization_state_channel)
         end
         put!(localization_state_channel, localization_state)
+        @info "localization state: $localization_state"
+        μ_prev = μ
+        Σ_prev = Σ
+        t_prev = t
+
+        fresh_gps_meas = []
+        fresh_imu_meas = []
     end
-end
-
-# struct GPSMeasurement <: Measurement
-#     time::Float64
-#     lat::Float64
-#     long::Float64
-# end
-# struct IMUMeasurement <: Measurement
-#     time::Float64
-#     linear_vel::SVector{3,Float64}
-#     angular_vel::SVector{3,Float64}
-# end
-
-function sort_meas_array(meas_array)
-    sort(meas_array, by=x -> x.time)
 end

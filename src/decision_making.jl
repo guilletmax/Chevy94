@@ -24,8 +24,6 @@ function decision_making(localization_state_channel,
 
     """REMOVE ME EVENTUALLY"""
     target_road_segment_id = 94
-    @info "Target: $target_road_segment_id"
-
 
     x = -1
     p = -1
@@ -34,13 +32,17 @@ function decision_making(localization_state_channel,
 
     is_setup = false
     while !is_setup
-        sleep(0.05)
-
+        sleep(0.01) # worked with gt at .05 sleep
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
+            @info "first state from localization: $x"
 
             # GET SEGMENTS FROM LOCALIZATION DOESN'T ALWAYS WORK (think breaks on 101) NEED TO FIX
             curr_segments = get_segments_from_localization(x.position[1], x.position[2], map)
+            if isempty(curr_segments)
+                @info "initial localization state not found on map"
+                continue
+            end
             curr_segment = curr_segments[1]
 
             shortest_path = shortest_path_bfs(map, curr_segments[1].id, target_road_segment_id)
@@ -56,6 +58,7 @@ function decision_making(localization_state_channel,
             end
 
             path = shortest_path
+            @info "decision making setup"
             @info path
             is_setup = true
         end
@@ -68,7 +71,7 @@ function decision_making(localization_state_channel,
     target_speed = default_speed
     steering_angle = 0.0
 
-    @async while isopen(socket)
+    while isopen(socket)
         sleep(0.001)
 
         is_localization_updated = false

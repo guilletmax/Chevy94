@@ -1,6 +1,6 @@
+
 struct LocalizationType
-    state::Vector{Float64}
-    state_covariance::Matrix{Float64}
+    position::SVector{3,Float64} # position of center of vehicle
 end
 
 struct PerceptionType
@@ -27,7 +27,7 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
     cam_channel = Channel{CameraMeasurement}(32)
     gt_channel = Channel{GroundTruthMeasurement}(32)
 
-    #localization_state_channel = Channel{LocalizationType}(1)
+    localization_state_channel = Channel{LocalizationType}(1)
     perception_state_channel = Channel{PerceptionType}(1)
 
     target_map_segment = 0
@@ -60,9 +60,9 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
     controlled = true
     controls = Controls(0.0, 0.0)
 
-    #@async localize(gps_channel, imu_channel, localization_state_channel)
+    @async localize(gps_channel, imu_channel, localization_state_channel)
     #@async perception(cam_channel, localization_state_channel, perception_state_channel)
-    @async decision_making(gt_channel, perception_state_channel, map, socket, controls)
+    @async decision_making(localization_state_channel, perception_state_channel, map, socket, controls)
 
     while controlled && isopen(socket)
         sleep(0.01)
