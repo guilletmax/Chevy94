@@ -152,30 +152,18 @@ function f_jacobian(x, Δt)
 
 end
 
-#what are good values for Epsilon
-#does a control variable exist
-#Line 187
-#Line 184
-#How should I pass in the imu and gps measurements??? A little confused about the initialization steps... not sure what to do here
-#rule of thumb: describe what kind of error you would expect in model you are using - quaternion: normalize to 1 (4 element vector with norm 1)
-##can find for Ez elsewhere
 
-#QUESTION: Difference between x0 and μ
-function localize_filter(; μ, Σ, Σ_gps, Σ_imu, measurements)
-    # u_constant = randn(rng) * [5.0, 0.2]
-    # u_prev = zeros(2)
-
-    μ_prev = μ
-    Σ_prev = Σ
-
-    @info "starting loop"
-    for k in 2:length(measurements)
-        @info "k: $k"
-        Δ = measurements[k].time - measurements[k-1].time
-        # @info "delta: $Δ"
-        # @info "μ_prev: $μ_prev"
+function localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, measurements)
+    t = last(measurements).time
+    for k in 1:length(measurements)
+        Δ = -1
+        if k == 1
+            Δ = measurements[k].time - t_prev
+        else
+            Δ = measurements[k].time - measurements[k-1].time
+        end
         μ̂ = rigid_body_dynamics(μ_prev[1:3], μ_prev[4:7], μ_prev[8:10], μ_prev[11:13], Δ) # 13 x 1
-        # @info "μ̂: $μ̂"
+        @info "μ̂: $μ̂"
 
         h = -1
         C = -1
@@ -195,88 +183,99 @@ function localize_filter(; μ, Σ, Σ_gps, Σ_imu, measurements)
             C = h_imu_jacobian(μ̂) # 6 x 13
             Σ_z = Σ_imu # 6 x 6
         end
-        # @info "h: $h"
-        # @info "C: $C"
-        # @info "Σ_z: $Σ_z"
+        @info "h: $h"
+        @info "C: $C"
+        @info "Σ_z: $Σ_z"
 
         A = f_jacobian(μ_prev, Δ) # 13 x 13
-        # @info "A: $A"
+        @info "A: $A"
         d = h - C * μ̂ # ( 2 x 1 || 6 x 1 ) - ( ( 2 x 13 || 6 x 13 ) * 13 x 1 ) = ( 2 x 1 || 6 x 1 )
-        # @info "d: $d"
+        @info "d: $d"
         Σ̂ = A * Σ_prev * A'   # define another type of sigma covariance for sigma process 13x13 * 13x13 * 13x13 = 13x13
-        # @info "Σ̂: $Σ̂"
+        @info "Σ̂: $Σ̂"
         Σ_k = (Σ̂^(-1) + C' * (Σ_z)^(-1) * C)^(-1) # ( 13 x 13 + ( 13 x 2 || 13 x 6 ) * ( 2 x 2 || 6 x 6 ) * ( 2 x 13 || 6 x 13 ) ) = 13 x 13
-        # @info "Σ_k: $Σ_k"
+        @info "Σ_k: $Σ_k"
         μ_k = Σ_k * (Σ̂^(-1) * μ̂ + C' * (Σ_z)^(-1) * (zₖ - d)) # ( 13 x 13 * ( 13 x 13 * 13 x 1 + 13 x 6 * 6 x 6 * 6 x 1 ) ) = 13 x 1
-        # @info "μ_k: $μ_k"
+        @info "μ_k: $μ_k"
         μ_prev = μ_k
         Σ_prev = Σ_k
     end
-
     μ = μ_prev
     Σ = Σ_prev
-    (; μ, Σ)
+    return μ, Σ, t
 end
 
-# uₖ = u_constant
-# mₖ = uₖ + sqrt(proc_cov) * randn(rng, 2) # Noisy IMU measurement.
-# ω_true = sqrt(dist_cov) * randn(rng, 2)
-# u_prev = uₖ
-# TODO : perform update on Σ, μ
-#c = f(x_prev,uₖ,0,Δ) - A*x_prev - B*uₖ - L*0 #f(μₖ₋₁, mₖ, 0, Δ) - Aμₖ₋₁ - Bmₖ - L*0
-# B = (μ_prev, mₖ, zeros(2), Δ)#∇ᵤf(μₖ₋₁, mₖ, 0, Δ),
-# println("HERE IS w:",ω_true, zeros(2) )
-# println("inside of for loop here is A", A)
 
-# L = jac_fu(μ_prev, mₖ, zeros(2), Δ)
-# d = h(μ̂) - C * μ̂
-# if output
-#     println("Ttimestep ", k, ":")
-#     println("   Ground truth (x,y,z): ", xₖ[1:3])
-#     println("   Estimated (x,y,z): ", μ_k[1:3])
-#     println("   Ground truth quat: ", xₖ[4:7])
-#     println("   Estimated quat: ", μ_k[4:7])
-#     println("   Ground truth v: ", xₖ[8:10])
-#     println("   estimated v: ", μ_k[8:10])
-#     println("   Ground truth w: ", xₖ[11:13])
-#     println("   estimated w: ", μ_k[11:13])
-#     println("   measurement received: ", zₖ)
-#     println("   Uncertainty measure (det(cov)): ", det(Σ_k))
-# end
-
-#how is localize called - how often will it return?
-#what do I do about time steps?
 function localize(gps_channel, imu_channel, localization_state_channel)
-    # Set up algorithm / initialize variables
-    @info "in localize"
-    @async while true
-        sleep(1)
-        @info "hi"
-        fresh_gps_meas = []
+    fresh_gps_meas = []
+    fresh_imu_meas = []
+
+    μ_prev = -1
+    Σ_prev = -1
+    t_prev = -1
+
+    setup = false
+    while !setup
+        sleep(0.001)
+        gps_meas = -1
+        if isready(gps_channel)
+            gps_meas = take!(gps_channel)
+        else
+            continue
+        end
+        #default_quaternion = [1, 0, 0, 0]
+        #init_x = gps_meas.long
+        #init_y = gps_meas.lat
+        init_z = 3.2428496460474134 #grabbed from first gt measurement, can keep
+        init_t = gps_meas.time
+
+        #grabbed from first gt measurement
+        init_x = -91.66655951015551
+        init_y = -74.99983643946713
+        default_quaternion = [0.7071088264608639, -0.0002105419891602536, 0.0002601612999704231, 0.7071046567017563]
+        default_velocity = [0.0030428557537161595, -0.0021233391786533917, -0.1077977346828422]
+        default_angular_velocity = [0.0013151135040768936, 0.012796697753244386, -0.00010083551663550507]
+
+        μ_prev = [init_x, init_y, init_z, default_quaternion[1], default_quaternion[2], default_quaternion[3], default_quaternion[4], default_velocity[1], default_velocity[2], default_velocity[3], default_angular_velocity[1], default_angular_velocity[2], default_angular_velocity[3]]
+        Σ_prev = Diagonal([5, 5, 3, 1, 1, 1, 1, 0.4, 0.4, 0.4, 0.2, 0.2, 0.2])
+        t_prev = init_t
+
+        setup = true
+        @info "localiation setup"
+        @info "μ_prev: $μ_prev"
+        @info "Σ_prev: $Σ_prev"
+        @info "t_prev: $t_prev"
+
+        localization_state = LocalizationType(μ_prev[1:3])
+        put!(localization_state_channel, localization_state)
+    end
+
+    # let decision_making start up with initial gps reading
+    sleep(1)
+    while true
+        sleep(0.00001)
         while isready(gps_channel)
-            sleep(0.001)
+            sleep(0.000001)
             meas = take!(gps_channel)
-            push!(fresh_gps_meas, meas)
-            @info "gps: $meas"
+            if meas.time >= t_prev
+                push!(fresh_gps_meas, meas)
+            end
         end
-        fresh_imu_meas = []
         while isready(imu_channel)
-            sleep(0.001)
+            sleep(0.000001)
             meas = take!(imu_channel)
-            push!(fresh_imu_meas, meas)
-            @info "imu: $imu"
+            if meas.time >= t_prev
+                push!(fresh_imu_meas, meas)
+            end
         end
 
-        #wait and get first gps measurement and use that to inform mu zero
+        if isempty(fresh_gps_meas) || isempty(fresh_imu_meas)
+            continue
+        end
 
-        @info "end collection of measurements"
         measurements = vcat(fresh_imu_meas, fresh_gps_meas)
-        @info "unsorted: $measurements"
         sort!(measurements, by=x -> x.time)
-        @info "sorted: $measurements"
-
-
-        # use first gps measurment to set intial state
+        @info "length of measurements: $(length(measurements))"
 
         # struct GPSMeasurement <: Measurement
         #     time::Float64
@@ -284,35 +283,32 @@ function localize(gps_channel, imu_channel, localization_state_channel)
         #     long::Float64
         # end
 
-        # Tbody = get_body_transform(q_body, xyz_body)
-        # xyz_gps = Tbody * [gps_loc_body; 1]
+        Σ_gps = Diagonal([1, 1])
+        Σ_imu = Diagonal([0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
 
-        default_quaternion = [1, 0, 0, 0]
-        init_x = fresh_gps_meas[1].long
-        init_y = fresh_gps_meas[1].lat
+        @info "μ_prev: $μ_prev"
+        @info "Σ_prev: $Σ_prev"
+        @info "t_prev: $t_prev"
+        @info "Σ_gps: $Σ_gps"
+        @info "Σ_imu: $Σ_imu"
+        @info "measurements: $measurements"
+        μ, Σ, t = localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, measurements)
+        @info "localize filter results:"
+        @info "μ: $μ"
+        @info "Σ: $Σ"
+        @info "t: $t"
 
-        # predict segment we're on - done (maybe kev fixed)
-        #   find lane_boundary, get angle of start coordinate to end coordinate with respect 0 (straight up) (this should give us our approximate heading with respoect to map)
-        #   turn heading into quaternion measurements
-
-        # get_segments_from_localization(init_x, init_y, )
-
-        init_mu = [init_x, init_y, 1, default_quaternion[1], default_quaternion[2], default_quaternion[3], default_quaternion[4], 0, 0, 0, 0, 0, 0]
-
-        # @info "init_mu: $init_mu"
-
-        #orientation: what part of the map are you on, what lane segment, which direction is it facing and that will tell us the orientation 
-        # process measurements
-        (; μ, Σ) = localize_filter(; μ=init_mu, Σ=Diagonal([5, 5, 3, 1, 1, 1, 1, 0.4, 0.4, 0.4, 0.2, 0.2, 0.2]), Σ_gps=Diagonal([1, 1]), Σ_imu=Diagonal([0.1, 0.1, 0.1, 0.1, 0.1, 0.1]), measurements)
-        # @info "localize filter results:"
-        # @info "μ: $μ"
-        # @info "Σ: $Σ"
-
-        @info μ[1:3]
         localization_state = LocalizationType(μ[1:3])
         if isready(localization_state_channel)
             take!(localization_state_channel)
         end
         put!(localization_state_channel, localization_state)
+        @info "localization state: $localization_state"
+        μ_prev = μ
+        Σ_prev = Σ
+        t_prev = t
+
+        fresh_gps_meas = []
+        fresh_imu_meas = []
     end
 end
