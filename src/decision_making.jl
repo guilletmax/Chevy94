@@ -34,10 +34,12 @@ function decision_making(localization_state_channel,
 
     is_setup = false
     while !is_setup
-        sleep(0.05)
+        sleep(2) # worked with gt at .05 sleep
 
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
+
+            @info "localization state: $x"
 
             # GET SEGMENTS FROM LOCALIZATION DOESN'T ALWAYS WORK (think breaks on 101) NEED TO FIX
             curr_segments = get_segments_from_localization(x.position[1], x.position[2], map)
