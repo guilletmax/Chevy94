@@ -71,86 +71,149 @@ function h_imu_jacobian(x)
 
 end
 
-#x = [p1 p2 p3 q1 q2 q3 q4 v1 v2 v3 w1 w2 w3]
-#is x vertical or horizontal
-function f_jacobian(x, Δt)
-    # jac_mag = sqrt(ωx^2 + ωy^2 + ωz^2) / norm(ω)
-    # jac_sr = (-sin(mag * Δt / 2.0)) * (Δt / 2.0)
-    # jac_vr = cos(mag * Δt / 2) * (Δt / 2)
-    r = x[11:13] #3x1 ? renamed for convenience
-    mag = norm(r) #square root of rTr (useful in calculating the derivative)
+function f(x, Δt)
+    rigid_body_dynamics(x[1:3], x[4:7], x[8:10], x[11:13], Δt)
+end
 
-    sᵣ = cos(mag * Δt / 2.0) #deriv w.r.t mag
-    jac_sr = (-sin(mag * Δt / 2.0) * Δt / 2 / mag) * r #3x1
+function Jac_x_f(x, Δt)
+    J = zeros(13, 13)
 
-    a = sin(mag * Δt / 2.0)
-    jac_a = cos(mag * Δt / 2.0) * Δt / 2.0 / mag
-    vᵣ = a * r / mag # 3x1
-    jav_vr = [
-        a/mag+r[1]^2*(mag*jac_a-a/mag) r[1]*r[2]*jac_a r[1]*r[3]*jac_a
-        r[1]*r[2]*jac_a a/mag+r[2]^2*(mag*jac_a-a/mag) r[3]*r[2]*jac_a
-        r[1]*r[3]*jac_a r[3]*r[2]*jac_a a/mag+r[3]^2*(mag*jac_a-a/mag)
-    ]
-    #3x3
-
-    sₙ = x[4] #1x1
-    vₙ = x[5:7] #3x1
-
-    # [jac_sr; jav_vr]#4x3
-    s = sₙ * sᵣ - vₙ' * vᵣ #1x1
-
-    # jac_s = [sₙ 0 0] #
-    v = sₙ * vᵣ + sᵣ * vₙ + vₙ × vᵣ #1x1*3x1 + 1x1*3x1 + 3x1 = 3x1
-    #sn*[vr1 vr2 vr3] + sr*[vn1 vn2 vn3] + [vnr vnr vnr] this is a 3x1
-    #v = [sn*vr1+sr*vn1+vnr1 sn*vr2+sr*vn2+vnr2 sn*vr3+sr*vn3+vnr3]
-    #jac_v= [  vₙ ]
-
-    # if mag is small: v = vn 3x1 vectr
-    #if mag is small: s = sn 
-    #if mag is small: new_quat = [sn; vn]
-    jac_s_wrt_r = [0 0 0]
-    # jac_v = [vₙ[1] 0 0; 0 vₙ[2] 0; 0 0 vₙ[3]] #3x3
-
-    jac_v_wrt_r = [0 0 0; 0 0 0; 0 0 0] #v = vn 3x1 vector then v does not change  wrt to r
-    jac_nq_wrt_quat = [1 0 0 0; 0 1 0 0; 0 0 1 0; 0 0 0 1] #4x4
-
-    if mag >= 1e-5
-        jac_s_int = [sₙ - vₙ' * vᵣ sₙ * sᵣ .- vₙ'] #1x4
-        jac_s_wrt_r = jac_s_int * [jac_sr'; jav_vr] #1x4 * 4x3 = 1x3 TODO: Do i need to transpose jac_sr
-
-        # jac_v_int = [[vᵣ[1] 0 0 ; 0 vᵣ[2] 0; 0 0 vᵣ[3]] ; sₙ + [vₙ[3] - vₙ[4] vₙ[2] - vₙ[4] vₙ[2] - vₙ[3]]] # 2x3
-        # jac_v_wrt_r = jac_v_int' * [jac_sr; jav_vr] #2x3 * 4x3 = should be a 3x3 wrt to r
-        # jac_v_vn = sᵣ + [vᵣ[3] - vᵣ[2] vᵣ[3] - vᵣ[1] vᵣ[2] - vᵣ[1]] #1x3
-        b = sᵣ * Δt / 2 - a / mag
-        q = x[4:7]
-        jac_v_int = [
-            r[1]*b*(q[3]*r[3]-q[4]*r[2]) r[2]*b*(q[3]*r[3]-q[4]*r[2])-q[4]*a/mag r[3]*b*(q[3]*r[3]-q[4]*r[2])+q[3]*a/mag
-            r[1]*b*(q[2]*r[3]-q[4]*r[1])-q[4]*a/mag r[2]*b*(q[2]*r[3]-q[4]*r[1]) r[3]*b*(q[2]*r[3]-q[4]*r[1])+q[2]*a/mag
-            r[1]*b*(q[2]*r[2]-q[3]*r[1])-q[3]*a/mag r[2]*b*(q[2]*r[2]-q[3]*r[1])+q[2]*a/mag r[3]*b*(q[2]*r[2]-q[3]*r[1])
-        ]#3x3
-
-        jac_v_wrt_r = [vᵣ[1] 0 0; 0 vᵣ[2] 0; 0 0 vᵣ[3]] * jav_vr .+ vₙ' * jac_sr + jac_v_int #3x3*3x3 +3x1*1*3 + 3x3 = 3x3 #TODO IS THIS RIGHT???
-        jac_nq_wrt_quat = [
-            sᵣ a/mag*r[1] a/mag*r[2] a/mag*r[3]
-            (a / mag * r')' [sᵣ a/mag*r[3] -a/mag*r[2]; a/mag*r[3] sᵣ -a/mag*r[1]; a/mag*r[2] -a/mag*r[1] sᵣ]
-        ]#should be a 4x4
+    r = x[11:13]
+    mag = norm(r)
+    if mag < 1e-5
+        sᵣ = 1.0
+        vᵣ = zeros(3)
+    else
+        sᵣ = cos(mag * Δt / 2.0)
+        vᵣ = sin(mag * Δt / 2.0) * (r / mag)
     end
 
-    jac_nq_wrt_r = [jac_s_wrt_r; jac_v_wrt_r] #this is w.r.t r with dimensions 4x3 
-    # println("jac_nq_wrt_r: ", size(jac_nq_wrt_r))
-    jac_new_position = [[x[1] 0 0; 0 x[2] 0; 0 0 x[3]] zeros(3, 4) [Δt 0 0; 0 Δt 0; 0 0 Δt] zeros(3, 3)]
-    jac_new_quat = [zeros(4, 3) jac_nq_wrt_quat zeros(4, 3) jac_nq_wrt_r] #4x13
-    jac_new_velocity = [zeros(3, 7) [1 0 0; 0 1 0; 0 0 1] zeros(3, 3)]
-    jac_new_angular = [zeros(3, 10) [1 0 0; 0 1 0; 0 0 1]]
+    sₙ = x[4]
+    vₙ = x[5:7]
 
-    [
-        jac_new_position
-        jac_new_quat
-        jac_new_velocity
-        jac_new_angular
-    ]
+    s = sₙ * sᵣ - vₙ' * vᵣ
+    v = sₙ * vᵣ + sᵣ * vₙ + vₙ × vᵣ
 
+    R = Rot_from_quat([sₙ; vₙ])
+    (J_R_q1, J_R_q2, J_R_q3, J_R_q4) = J_R_q([sₙ; vₙ])
+
+    #new_position = position + Δt * R * velocity
+    #new_quaternion = [s; v]
+    #new_velocity = velocity
+    #new_angular_vel = angular_vel
+
+    velocity = x[8:10]
+
+    J[1:3, 1:3] = I(3)
+    J[1:3, 4] = Δt * J_R_q1 * velocity
+    J[1:3, 5] = Δt * J_R_q2 * velocity
+    J[1:3, 6] = Δt * J_R_q3 * velocity
+    J[1:3, 7] = Δt * J_R_q4 * velocity
+    J[1:3, 8:10] = Δt * R
+    J[4, 4] = sᵣ
+    J[4, 5:7] = -vᵣ'
+    J[5:7, 4] = vᵣ
+    J[5:7, 5:7] = [sᵣ vᵣ[3] -vᵣ[2]
+        -vᵣ[3] sᵣ vᵣ[1]
+        vᵣ[2] -vᵣ[1] sᵣ]
+
+    Jsv_srvr = [sₙ -vₙ'
+        vₙ [sₙ -vₙ[3] vₙ[2];
+        vₙ[3] sₙ -vₙ[1];
+        -vₙ[2] vₙ[1] sₙ]]
+    Jsrvr_mag = [-sin(mag * Δt / 2.0) * Δt / 2; sin(mag * Δt / 2.0) * (-r / mag^2) + cos(mag * Δt / 2) * Δt / 2 * r / mag]
+    Jsrvr_r = [zeros(1, 3); sin(mag * Δt / 2) / mag * I(3)]
+    Jmag_r = 1 / mag * r'
+
+    J[4:7, 11:13] = Jsv_srvr * (Jsrvr_mag * Jmag_r + Jsrvr_r)
+    J[8:10, 8:10] = I(3)
+    J[11:13, 11:13] = I(3)
+    J
 end
+
+
+
+
+#x = [p1 p2 p3 q1 q2 q3 q4 v1 v2 v3 w1 w2 w3]
+#is x vertical or horizontal
+# function f_jacobian(x, Δt)
+#     # jac_mag = sqrt(ωx^2 + ωy^2 + ωz^2) / norm(ω)
+#     # jac_sr = (-sin(mag * Δt / 2.0)) * (Δt / 2.0)
+#     # jac_vr = cos(mag * Δt / 2) * (Δt / 2)
+#     r = x[11:13] #3x1 ? renamed for convenience
+#     mag = norm(r) #square root of rTr (useful in calculating the derivative)
+
+#     sᵣ = cos(mag * Δt / 2.0) #deriv w.r.t mag
+#     jac_sr = (-sin(mag * Δt / 2.0) * Δt / 2 / mag) * r #3x1
+
+#     a = sin(mag * Δt / 2.0)
+#     jac_a = cos(mag * Δt / 2.0) * Δt / 2.0 / mag
+#     vᵣ = a * r / mag # 3x1
+#     jav_vr = [
+#         a/mag+r[1]^2*(mag*jac_a-a/mag) r[1]*r[2]*jac_a r[1]*r[3]*jac_a
+#         r[1]*r[2]*jac_a a/mag+r[2]^2*(mag*jac_a-a/mag) r[3]*r[2]*jac_a
+#         r[1]*r[3]*jac_a r[3]*r[2]*jac_a a/mag+r[3]^2*(mag*jac_a-a/mag)
+#     ]
+#     #3x3
+
+#     sₙ = x[4] #1x1
+#     vₙ = x[5:7] #3x1
+
+#     # [jac_sr; jav_vr]#4x3
+#     s = sₙ * sᵣ - vₙ' * vᵣ #1x1
+
+#     # jac_s = [sₙ 0 0] #
+#     v = sₙ * vᵣ + sᵣ * vₙ + vₙ × vᵣ #1x1*3x1 + 1x1*3x1 + 3x1 = 3x1
+#     #sn*[vr1 vr2 vr3] + sr*[vn1 vn2 vn3] + [vnr vnr vnr] this is a 3x1
+#     #v = [sn*vr1+sr*vn1+vnr1 sn*vr2+sr*vn2+vnr2 sn*vr3+sr*vn3+vnr3]
+#     #jac_v= [  vₙ ]
+
+#     # if mag is small: v = vn 3x1 vectr
+#     #if mag is small: s = sn 
+#     #if mag is small: new_quat = [sn; vn]
+#     jac_s_wrt_r = [0 0 0]
+#     # jac_v = [vₙ[1] 0 0; 0 vₙ[2] 0; 0 0 vₙ[3]] #3x3
+
+#     jac_v_wrt_r = [0 0 0; 0 0 0; 0 0 0] #v = vn 3x1 vector then v does not change  wrt to r
+#     jac_nq_wrt_quat = [1 0 0 0; 0 1 0 0; 0 0 1 0; 0 0 0 1] #4x4
+
+#     if mag >= 1e-5
+#         jac_s_int = [sₙ - vₙ' * vᵣ sₙ * sᵣ .- vₙ'] #1x4
+#         jac_s_wrt_r = jac_s_int * [jac_sr'; jav_vr] #1x4 * 4x3 = 1x3 TODO: Do i need to transpose jac_sr
+
+#         # jac_v_int = [[vᵣ[1] 0 0 ; 0 vᵣ[2] 0; 0 0 vᵣ[3]] ; sₙ + [vₙ[3] - vₙ[4] vₙ[2] - vₙ[4] vₙ[2] - vₙ[3]]] # 2x3
+#         # jac_v_wrt_r = jac_v_int' * [jac_sr; jav_vr] #2x3 * 4x3 = should be a 3x3 wrt to r
+#         # jac_v_vn = sᵣ + [vᵣ[3] - vᵣ[2] vᵣ[3] - vᵣ[1] vᵣ[2] - vᵣ[1]] #1x3
+#         b = sᵣ * Δt / 2 - a / mag
+#         q = x[4:7]
+#         jac_v_int = [
+#             r[1]*b*(q[3]*r[3]-q[4]*r[2]) r[2]*b*(q[3]*r[3]-q[4]*r[2])-q[4]*a/mag r[3]*b*(q[3]*r[3]-q[4]*r[2])+q[3]*a/mag
+#             r[1]*b*(q[2]*r[3]-q[4]*r[1])-q[4]*a/mag r[2]*b*(q[2]*r[3]-q[4]*r[1]) r[3]*b*(q[2]*r[3]-q[4]*r[1])+q[2]*a/mag
+#             r[1]*b*(q[2]*r[2]-q[3]*r[1])-q[3]*a/mag r[2]*b*(q[2]*r[2]-q[3]*r[1])+q[2]*a/mag r[3]*b*(q[2]*r[2]-q[3]*r[1])
+#         ]#3x3
+
+#         jac_v_wrt_r = [vᵣ[1] 0 0; 0 vᵣ[2] 0; 0 0 vᵣ[3]] * jav_vr .+ vₙ' * jac_sr + jac_v_int #3x3*3x3 +3x1*1*3 + 3x3 = 3x3 #TODO IS THIS RIGHT???
+#         jac_nq_wrt_quat = [
+#             sᵣ a/mag*r[1] a/mag*r[2] a/mag*r[3]
+#             (a / mag * r')' [sᵣ a/mag*r[3] -a/mag*r[2]; a/mag*r[3] sᵣ -a/mag*r[1]; a/mag*r[2] -a/mag*r[1] sᵣ]
+#         ]#should be a 4x4
+#     end
+
+#     jac_nq_wrt_r = [jac_s_wrt_r; jac_v_wrt_r] #this is w.r.t r with dimensions 4x3 
+#     # println("jac_nq_wrt_r: ", size(jac_nq_wrt_r))
+#     jac_new_position = [[x[1] 0 0; 0 x[2] 0; 0 0 x[3]] zeros(3, 4) [Δt 0 0; 0 Δt 0; 0 0 Δt] zeros(3, 3)]
+#     jac_new_quat = [zeros(4, 3) jac_nq_wrt_quat zeros(4, 3) jac_nq_wrt_r] #4x13
+#     jac_new_velocity = [zeros(3, 7) [1 0 0; 0 1 0; 0 0 1] zeros(3, 3)]
+#     jac_new_angular = [zeros(3, 10) [1 0 0; 0 1 0; 0 0 1]]
+
+#     [
+#         jac_new_position
+#         jac_new_quat
+#         jac_new_velocity
+#         jac_new_angular
+#     ]
+
+# end
 
 
 function localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, measurements)
@@ -187,7 +250,7 @@ function localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, measurements)
         @info "C: $C"
         @info "Σ_z: $Σ_z"
 
-        A = f_jacobian(μ_prev, Δ) # 13 x 13
+        A = Jac_x_f(μ_prev, Δ) # 13 x 13
         @info "A: $A"
         d = h - C * μ̂ # ( 2 x 1 || 6 x 1 ) - ( ( 2 x 13 || 6 x 13 ) * 13 x 1 ) = ( 2 x 1 || 6 x 1 )
         @info "d: $d"
