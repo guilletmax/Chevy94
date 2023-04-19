@@ -237,18 +237,15 @@ function perception_filter(latest_localization_state, cam_measurements; μ=[0 0 
 		# Δ = cam_measurements[k].time - prev_time
 		#@info "curr time: $(cam_measurements[k].time)"
 		Δ = meas_freq + meas_jitter * (2*rand(rng) - 1) # Δ as used in HW4
-		@info "delta: $Δ"
-
-		### Calculations of jac_fx, f, and h.
-
-        A = jac_fx(μ_prev, Δ)
-		@info "A: $A"
 
         μ̂ = f(μ_prev, Δ)
-		@info "μ̂ $μ̂"
-
+		#@info μ̂
+        A = jac_fx(μ̂, Δ)
+		#@info A
 		h_result = h(μ̂, latest_localization_state, camera_id)
-		@info "h result: $h_result"
+		#@info h_result
+		zₖ = h_result.bboxes + sqrt(meas_var) * randn(rng, 4)
+		#@info zₖ
 
 		# Creates C as a 4x7 Jacobian, by calling jac_hx on each of the 4 3D corners which contribute to the bounding box
 		C = []
@@ -256,32 +253,23 @@ function perception_filter(latest_localization_state, cam_measurements; μ=[0 0 
 			push!(C, jac_hx(μ̂, latest_localization_state, Δ, corner_id, cam_measurements[k].camera_id))
 		end
 		C = vcat(C...)
-		@info "C: $C"
+		#@info C
 
-		### FIXME
-		### This is similar to something that was in HW4 - but was this used to determine the "true" measurements of the simulation?
-		### z_k is used in calculating μ, so not sure if this and μ should be changed.
-		zₖ = h_result.bboxes + sqrt(meas_var) * randn(rng, 4)
-		@info "z_k: $zₖ"
-		
+		K = Σ*C'*inv(C*Σ*C' + meas_var)
+		#@info "K: $K"
+		μ = μ̂ + K*(zₖ - h_result.bboxes)
+		#@info μ
 
-		### Equations from HW4 for updating Σ
-        Σ̂ = A*Σ_prev*A'
-		@info "Sigma hat: $Σ̂"
-        Σ = inv(inv(Σ̂) + C'*inv(meas_var)*C)
-		@info "sigma: $Σ"
-
-		### These equations are similar to those in HW4. I think d makes sense, but am a little confused by μ.
-		d = h_result.bboxes - C*μ̂
-		@info "d: $d"
-        μ = Σ * (inv(Σ̂)*μ̂ + C'*inv(meas_var)*(zₖ-d))
-		@info "μ: $μ"
+		Σ̂ = A*Σ_prev*A'
+		#@info "sigma hat: Σ̂"
+		Σ = (I - K*C)*Σ̂
+		#@info Σ
 
 	    μ_prev = μ
 	    Σ_prev = Σ
 
         push!(results, PerceptionType(μ, Σ))
-		@info results
+		@info μ
 
 		## theoretically, this would be used to help set Δ
 		#prev_time = cam_measurements[k].time
@@ -299,6 +287,7 @@ Goal: Estimate x_k = [p1 p2 θ v l w h]
 function perception(cam_meas_channel, localization_state_channel, perception_state_channel)
     # set up stuff
     while true
+		sleep(0.01)
         fresh_cam_meas = []
         while isready(cam_meas_channel)
 			#@info "cam_meas_channel is ready"
@@ -327,8 +316,6 @@ function perception(cam_meas_channel, localization_state_channel, perception_sta
         		end
         		put!(perception_state_channel, result)
 			end
-			@info "done with one pass of filter"
 		end
-	
     end
 end
