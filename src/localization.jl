@@ -85,76 +85,51 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
     Σ_prev = -1
     t_prev = -1
 
-    setup = false
-    while !setup
-        # @info "waiting for setup"
-        sleep(0.001)
-		
-		gps_meas = -1
-		if isready(gps_channel)
-			gps_meas = take!(gps_channel)
-		else
-			continue
-		end
+    @info "waiting for setup"
 
-		init_x = gps_meas.long
-		init_y = gps_meas.lat
-		init_z = 3.2428496460474134
-
-		default_quaternion = [0.7071088264608639, -0.0002105419891602536, 0.0002601612999704231, 0.7071046567017563]
-        default_velocity = [0.0030428557537161595, -0.0021233391786533917, -0.1077977346828422]
-        default_angular_velocity = [0.0013151135040768936, 0.012796697753244386, -0.00010083551663550507]
-
-		init_t = gps_meas.time
-
-		μ_prev = [init_x, init_y, init_z, default_quaternion[1], default_quaternion[2], default_quaternion[3], default_quaternion[4], default_velocity[1], default_velocity[2], default_velocity[3], default_angular_velocity[1], default_angular_velocity[2], default_angular_velocity[3]]
-
-		Σ_prev = Diagonal([50, 50, 0.0001, 50, 50, 50, 50, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001])
-
-		t_prev = init_t
-
-		controls.target_speed = 1
-
-		while length(fresh_gps_meas) < 15 && length(fresh_imu_meas) < 15
-			sleep(0.00001)
-            # @info "waiting for measurements"
-			while isready(gps_channel)
-				sleep(0.00001)
-				meas = take!(gps_channel)
-				if meas.time >= t_prev
-					push!(fresh_gps_meas, meas)
-				end
-			end
-
-			while isready(imu_channel)
-				sleep(0.00001)
-				meas = take!(imu_channel)
-				if meas.time >= t_prev
-					push!(fresh_imu_meas, meas)
-				end
-			end
-		end
-
-        # @info "setup complete"
-		measurements = vcat(fresh_gps_meas, fresh_imu_meas)
-		sort!(measurements, by = x -> x.time)
-
-		Σ_gps = Diagonal([10, 10, 5])
-		Σ_imu = Diagonal([0.1, 0.1, 0.1, 1, 1, 1])
-		Σ_proc = Diagonal([1, 1, 0.0001, 20, 20, 20, 20, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001])
-
-		μ_prev, Σ_prev, t_prev = localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, Σ_proc, measurements)
-        # @info "μ_prev: $μ_prev"
-        # @info "Σ_prev: $Σ_prev"
-        # @info "t_prev: $t_prev"
-
-		fresh_gps_meas = []
-		fresh_imu_meas = []
-
-		setup = true
+	t_prev = -1
+	while length(fresh_gps_meas) < 10
+		sleep(0.00001)
+    	if isready(gps_channel)
+    	    sleep(0.000001)
+    	    meas = take!(gps_channel)
+    	    if meas.time >= t_prev
+    	        push!(fresh_gps_meas, meas)
+				t_prev = meas.time
+    	    end
+    	end
 	end
 
+	mean_lat = mean(meas.lat for meas in fresh_gps_meas)
+	mean_long = mean(meas.long for meas in fresh_gps_meas)
+
+	@info "mean lat/long: $mean_lat, $mean_long"
+
+	init_x = mean_lat
+	init_y = mean_long
+	init_z = 3.2428496460474134
+
+	default_quaternion = [0.7071088264608639, -0.0002105419891602536, 0.0002601612999704231, 0.7071046567017563]
+    default_velocity = [0.0030428557537161595, -0.0021233391786533917, -0.1077977346828422]
+    default_angular_velocity = [0.0013151135040768936, 0.012796697753244386, -0.00010083551663550507]
+
+	init_t = t_prev
+
+	μ_prev = [init_x, init_y, init_z, default_quaternion[1], default_quaternion[2], default_quaternion[3], default_quaternion[4], default_velocity[1], default_velocity[2], default_velocity[3], default_angular_velocity[1], default_angular_velocity[2], default_angular_velocity[3]]
+
+	Σ_prev = Diagonal([50, 50, 0.0001, 50, 50, 50, 50, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001])
+
+	t_prev = init_t
+
+	controls.target_speed = 1
+	@info "setting target speed to 1"
+
 	## END OF SETUP
+    localization_state = LocalizationType(μ_prev[1:3])
+    if isready(localization_state_channel)
+        take!(localization_state_channel)
+    end
+    put!(localization_state_channel, localization_state)
 
 	error = 0
 	n = 0

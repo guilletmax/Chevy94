@@ -205,6 +205,7 @@ function get_segments_from_localization(x, y, map)
                 else
                     return [segment]
                 end
+                return[segment]
             end
         else
             left_r = abs(1 / lane_boundaries_left.curvature)
@@ -222,7 +223,7 @@ function get_segments_from_localization(x, y, map)
                 small_radius = right_r
             end
 
-            if norm([x; y] - small_center_one) < norm([x; y] - small_center_two)
+            if abs(norm([x; y] - small_center_one)) < abs(norm([x; y] - small_center_two)) # <- added abs() @3/18
                 circle_center = small_center_two
             else
                 circle_center = small_center_one
@@ -230,10 +231,13 @@ function get_segments_from_localization(x, y, map)
 
             dist_to_center = norm([x; y] - circle_center)
             inside_curves = dist_to_center >= small_radius && dist_to_center <= big_radius
-            start_normal_vector = lane_boundaries_left.pt_b - lane_boundaries_left.pt_a
+            start_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_right.pt_a # <- used to be left.pt_b - left.pt_a @3/18
             inside_start_boundary = dot(start_normal_vector, [x; y]) >= dot(start_normal_vector, lane_boundaries_left.pt_a)
-            end_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_left.pt_b
-            inside_end_boundary = dot(end_normal_vector, [x; y]) >= dot(end_normal_vector, lane_boundaries_left.pt_b)
+            end_normal_vector = lane_boundaries_left.pt_b - lane_boundaries_right.pt_b # <- used to be left.pt_a - left.pt_b @3/18
+
+            inside_end_boundary = dot(end_normal_vector, [x; y]) <= dot(end_normal_vector, lane_boundaries_left.pt_b) # <- flipped inequality @3/18
+
+
             if (inside_curves && inside_start_boundary && inside_end_boundary)
                 if (VehicleSim.intersection in segment.lane_types)
                     push!(segments, segment)
