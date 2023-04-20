@@ -449,4 +449,23 @@ function shortest_path_bfs(map, start_segment_id, end_segment_id)
 end
 # end
 
+"""
+Check if we are closer to the next segment
+"""
+function closer_to_next_segment(x, y, curr_segment, next_segment)
+    curr_left = curr_segment.lane_boundaries[1]
+    curr_right = curr_segment.lane_boundaries[2]
+    next_left = next_segment.lane_boundaries[1]
+    next_right = next_segment.lane_boundaries[2]
+
+    center_of_curr_seg_x = (curr_left.pt_a[1] + curr_left.pt_b[1] + curr_right.pt_a[1] + curr_right.pt_b[1]) / 4.0
+    center_of_curr_seg_y = (curr_left.pt_a[2] + curr_left.pt_b[2] + curr_right.pt_a[2] + curr_right.pt_b[2]) / 4.0
+    center_of_next_seg_x = (next_left.pt_a[1] + next_left.pt_b[1] + next_right.pt_a[1] + next_right.pt_b[1]) / 4.0
+    center_of_next_seg_y = (next_left.pt_a[2] + next_left.pt_b[2] + next_right.pt_a[2] + next_right.pt_b[2]) / 4.0
+
+    dist_to_curr_seg = norm([x; y] - [center_of_curr_seg_x; center_of_curr_seg_y])
+    dist_to_next_seg = norm([x; y] - [center_of_next_seg_x; center_of_next_seg_y])
+
+    return dist_to_next_seg < dist_to_curr_seg
+end
 
