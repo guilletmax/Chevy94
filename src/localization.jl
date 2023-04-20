@@ -1,32 +1,4 @@
 
-function h_gps(x)
-    #gps_loc_body is 3x1
-    #Tbody is 3x4
-    T = get_gps_transform()
-    gps_loc_body = T * [zeros(3); 1.0]#3x1
-    xyz_body = x[1:3]
-    q_body = x[4:8]
-    Tbody = get_body_transform(q_body, xyz_body)  #transform of the body
-    xyz_gps = Tbody * [gps_loc_body; 1] #gps in map frame is 3x1
-    #how does tbody change wrt to q_body and xyz_body
-    return xyz_gps[1:2] #2x1
-end
-
-function h_gps_jacobian(x)
-	ForwardDiff.jacobian(h_gps, x)
-#    qw = x[4]
-#    qx = x[5]
-#    qy = x[6]
-#    qz = x[7]
-#    T = get_gps_transform()
-#    g = T * [zeros(3); 1.0]#3x1
-#    g1 = g[1]
-#    g2 = g[2]
-#    g3 = g[3]
-#    [x[1] 0 0 2*qw*g1-2*qz*g2+2*qy*g3 2*qx*g1+2*qy*g2+2*qz*g3 -2*qy*g1+2*qx*g2+2*qw*g3 -2*qz*g1-2*qw*g2+2*qx*g3 0 0 0 0 0 0
-#        0 x[2] 0 2*qz*g1+2*qw*g2-2*qx*g3 2*qy*g1-2*qx*g2-2*qw*g3 2*qx*g1+2*qy*g2+2*qz*g3 2*qw*g1-2*qz*g2+2*qy*g3 0 0 0 0 0 0]#Tbody[1:3, 1:3] #2 x 13
-end
-
 function h_imu(x)
     T_body_imu = get_imu_transform() #3x4
     T_imu_body = invert_transform(T_body_imu)
@@ -47,34 +19,6 @@ end
 #figure out how rows of T matrix cnage with respect to x. 
 function h_imu_jacobian(x)
 	ForwardDiff.jacobian(h_imu, x)
-    #T_body_imu = get_imu_transform() #3x4
-    #T_imu_body = invert_transform(T_body_imu) #3x4
-    #R = T_imu_body[1:3, 1:3] #constant can be passed in or defined in h function
-    #p = T_imu_body[1:3, end] #3x1
-
-    ##wi1 wi2 wi3
-    ##p1 p2 p3
-    ##(r21w1+r22w2+r23w3)p3-(r31w1+r32w2+r33w3)p2  (r11w1+r12w2+r13w3)p2-(r21w1+r22w2+r23w3)p1  (r11w1+r12w2+r13w3)p2-(r21w1+r22w2+r23w3)p1
-    ##[p3*r21-p]
-    #v_body = x[8:10] #x[8:10]
-    #ω_body = x[11:13] #3x1
-
-    #ω_imu = R * ω_body #3x3 * 3x1 = 3x1
-    ##[r11w1+r12w2+r13w3; r21w1+r22w2+r23w3 ; r31w1+r32w2+r33w3]
-    #jac_w_imu_w_bod = R
-    #v_imu = R * v_body + p × ω_imu #3x3 * 3x1 + 3x1 = 3x1 #changes wrt w and v_body
-    #jav_v_imu_v = R
-    #jac_v_imu_w_bod = [
-    #    p[2]*R[3, 1]-p[3]*R[2, 1] p[2]*R[3, 2]-p[3]*R[2, 2] p[2]*R[3, 3]-p[3]*R[2, 3]
-    #    p[1]*R[3, 1]-p[3]*R[1, 1] p[1]*R[3, 2]-p[3]*R[1, 2] p[1]*R[3, 3]-p[3]*R[1, 3]
-    #    p[1]*R[2, 1]-p[2]*R[1, 1] p[1]*R[2, 2]-p[2]*R[1, 2] p[1]*R[2, 3]-p[2]*R[1, 3]]
-    ## println(jac_v_imu_w_bod)
-    ## jac_ω_imu = R
-    ## jac_v_imu = [R p[1:3, 1:3] * ω_imu * R + R * p]
-    ## [v_imu; ω_imu] 6x1
-
-    #[zeros(6, 7) [jav_v_imu_v; zeros(3, 3)] [jac_v_imu_w_bod; jac_w_imu_w_bod]]
-
 end
 
 function localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, Σ_proc, measurements)
@@ -95,10 +39,10 @@ function localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, Σ_proc, meas
         zₖ = measurements[k]
         if zₖ isa GPSMeasurement
             # @info "it's a GPS!"
-            zₖ = [zₖ.lat, zₖ.long]
-            h = h_gps(μ̂) # 2 x 1
-            C = h_gps_jacobian(μ̂) # 2 x 13
-            Σ_z = Σ_gps # 2 x 2
+            zₖ = [zₖ.lat, zₖ.long, zₖ.heading]
+            h = h_gps(μ̂) # 3 x 1
+            C = Jac_h_gps(μ̂) # 3 x 13
+            Σ_z = Σ_gps # 3 x 3
         elseif zₖ isa IMUMeasurement
             # @info "it's an IMU!"
             zₖ = vcat(zₖ.linear_vel, zₖ.angular_vel)
@@ -106,9 +50,9 @@ function localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, Σ_proc, meas
             C = h_imu_jacobian(μ̂) # 6 x 13
             Σ_z = Σ_imu # 6 x 6
         end
-        #@info "h: $h"
-        #@info "C: $C"
-        #@info "Σ_z: $Σ_z"
+        # @info "h: $h"
+        # @info "C: $C"
+        # @info "Σ_z: $Σ_z"
 
         A = Jac_x_f(μ_prev, Δ) # 13 x 13
         #@info "A: $A"
@@ -133,6 +77,7 @@ end
 
 
 function localize(gps_channel, imu_channel, localization_state_channel, gt_channel, controls)
+    # @info "localization started"
     fresh_gps_meas = []
     fresh_imu_meas = []
 
@@ -142,6 +87,7 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
 
     setup = false
     while !setup
+        # @info "waiting for setup"
         sleep(0.001)
 		
 		gps_meas = -1
@@ -167,11 +113,11 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
 
 		t_prev = init_t
 
-		controls.target_speed = 5
-		sleep(1)
+		controls.target_speed = 1
 
 		while length(fresh_gps_meas) < 15 && length(fresh_imu_meas) < 15
 			sleep(0.00001)
+            # @info "waiting for measurements"
 			while isready(gps_channel)
 				sleep(0.00001)
 				meas = take!(gps_channel)
@@ -189,14 +135,18 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
 			end
 		end
 
+        # @info "setup complete"
 		measurements = vcat(fresh_gps_meas, fresh_imu_meas)
 		sort!(measurements, by = x -> x.time)
 
-		Σ_gps = Diagonal([10, 10]) ### TODO: add a third item when we merge Forrest's changes with yaw
+		Σ_gps = Diagonal([10, 10, 5])
 		Σ_imu = Diagonal([0.1, 0.1, 0.1, 1, 1, 1])
 		Σ_proc = Diagonal([1, 1, 0.0001, 20, 20, 20, 20, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001])
 
 		μ_prev, Σ_prev, t_prev = localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, Σ_proc, measurements)
+        # @info "μ_prev: $μ_prev"
+        # @info "Σ_prev: $Σ_prev"
+        # @info "t_prev: $t_prev"
 
 		fresh_gps_meas = []
 		fresh_imu_meas = []
@@ -234,7 +184,7 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
         sort!(measurements, by=x -> x.time)
         #@info "length of measurements: $(length(measurements))"
 
-        Σ_gps = Diagonal([10, 10])
+        Σ_gps = Diagonal([10, 10, 5])
         Σ_imu = Diagonal([1,1,1,1,1,1])
 		Σ_proc = Diagonal([0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01])
 
