@@ -21,6 +21,7 @@ function decision_making(localization_state_channel,
     map,
     socket,
     controls,
+    prev_segment_id,
     target_road_segment_id,
     arrived_channel)
 
@@ -36,23 +37,27 @@ function decision_making(localization_state_channel,
             x = take!(localization_state_channel)
             @info "initial localization state: $x"
 
-            # GET SEGMENTS FROM LOCALIZATION DOESN'T ALWAYS WORK (think breaks on 101) NEED TO FIX
-            curr_segments = get_segments_from_localization(x.position[1], x.position[2], map)
-            if isempty(curr_segments)
-                @info "unable to locate initial position on map. are you offroading?"
-                continue
-            end
-            curr_segment = curr_segments[1]
-
-            shortest_path = shortest_path_bfs(map, curr_segments[1].id, target_road_segment_id)
-            min_dist = length(shortest_path)
-            for i in eachindex(curr_segments[2:end])
-                new_path = shortest_path_bfs(map, curr_segments[1].id, target_road_segment_id)
-                new_dist = lenth(new_path)
-                if new_dist < min_dist
-                    shortest_path = new_path
-                    min_dist = new_dist
-                    curr_segment = curr_segments[i]
+            shortest_path = []
+            if (prev_segment_id != -1)
+                curr_segment = map[prev_segment_id]
+                shortest_path = shortest_path_bfs(map, curr_segment.id, target_road_segment_id)
+            else
+                curr_segments = get_segments_from_localization(x.position[1], x.position[2], map)
+                if isempty(curr_segments)
+                    @info "unable to locate initial position on map. are you offroading?"
+                    continue
+                end
+                curr_segment = curr_segments[1]
+                shortest_path = shortest_path_bfs(map, curr_segments[1].id, target_road_segment_id)
+                min_dist = length(shortest_path)
+                for i in eachindex(curr_segments[2:end])
+                    new_path = shortest_path_bfs(map, curr_segments[1].id, target_road_segment_id)
+                    new_dist = lenth(new_path)
+                    if new_dist < min_dist
+                        shortest_path = new_path
+                        min_dist = new_dist
+                        curr_segment = curr_segments[i]
+                    end
                 end
             end
 
@@ -72,7 +77,6 @@ function decision_making(localization_state_channel,
 
     while isopen(socket)
         sleep(0.001)
-
         is_localization_updated = false
         is_perception_updated = false
         if (isready(localization_state_channel))
@@ -86,9 +90,10 @@ function decision_making(localization_state_channel,
 
         if (is_localization_updated)
             next_segment = map[path[next_path_index]]
-            if in_segment(x.position[1], x.position[2], next_segment)
+            if in_segment(x.position[1], x.position[2], next_segment.lane_boundaries)
                 curr_segment = next_segment
                 next_path_index += 1
+                stopped = false
                 @info "new segment entered: $(curr_segment.id)"
             end
 
@@ -110,16 +115,29 @@ function decision_making(localization_state_channel,
 
             # pull out
             if curr_segment.id == target_road_segment_id && VehicleSim.loading_zone in curr_segment.lane_types
-                controls.target_speed = 3.5
+                controls.target_speed = 3
                 controls.steering_angle = -0.4
                 sleep(3.5)
                 controls.steering_angle = 0.4
                 sleep(3.5)
                 controls.steering_angle = 0.0
                 controls.target_speed = 0.0
-                break
+
+                # controls.target_speed = 3.0
+                # target_speed, steering_angle = update_steering(x.position[1], x.position[2], curr_segment.lane_boundaries[2:3], pid_state_straight, true)
+                # @info target_speed
+                # @info steering_angle
+                # @info curr_segment.lane_boundaries[2:3]
+                # if in_segment(x.position[1], x.position[2], [curr_segment.lane_boundaries[2], curr_segment.lane_boundaries[3]])
+                #     @info "in_segment"
+                #     controls.target_speed = 0.0
+                #     sleep(4)
+                #     @info "Arrived at destination segment: $target_road_segment_id"
+                #     put!(arrived_channel, 1)
+                #     break
+                # end
             else
-                target_speed, steering_angle = update_steering(x.position[1], x.position[2], curr_segment.lane_boundaries, pid_state_straight)
+                target_speed, steering_angle = update_steering(x.position[1], x.position[2], curr_segment.lane_boundaries, pid_state_straight, false)
             end
         end
 
@@ -150,20 +168,17 @@ function decision_making(localization_state_channel,
             controls.steering_angle = steering_angle
         end
     end
-
-    @info "Arrived at destination segment: $target_road_segment_id"
-    put!(arrived_channel, 1)
 end
 
 
 """
 Returns boolean indicating that we are in segment
 """
-function in_segment(x, y, segment)
-
+function in_segment(x, y, lane_boundaries)
+    @info lane_boundaries
     x_values = []
     y_values = []
-    for b in segment.lane_boundaries
+    for b in lane_boundaries
         push!(x_values, b.pt_a[1], b.pt_b[1])
         push!(y_values, b.pt_a[2], b.pt_b[2])
     end
@@ -204,6 +219,7 @@ function get_segments_from_localization(x, y, map)
                 else
                     return [segment]
                 end
+                return [segment]
             end
         else
             left_r = abs(1 / lane_boundaries_left.curvature)
@@ -221,7 +237,7 @@ function get_segments_from_localization(x, y, map)
                 small_radius = right_r
             end
 
-            if norm([x; y] - small_center_one) < norm([x; y] - small_center_two)
+            if abs(norm([x; y] - small_center_one)) < abs(norm([x; y] - small_center_two)) # <- added abs() @3/18
                 circle_center = small_center_two
             else
                 circle_center = small_center_one
@@ -229,10 +245,13 @@ function get_segments_from_localization(x, y, map)
 
             dist_to_center = norm([x; y] - circle_center)
             inside_curves = dist_to_center >= small_radius && dist_to_center <= big_radius
-            start_normal_vector = lane_boundaries_left.pt_b - lane_boundaries_left.pt_a
+            start_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_right.pt_a # <- used to be left.pt_b - left.pt_a @3/18
             inside_start_boundary = dot(start_normal_vector, [x; y]) >= dot(start_normal_vector, lane_boundaries_left.pt_a)
-            end_normal_vector = lane_boundaries_left.pt_a - lane_boundaries_left.pt_b
-            inside_end_boundary = dot(end_normal_vector, [x; y]) >= dot(end_normal_vector, lane_boundaries_left.pt_b)
+            end_normal_vector = lane_boundaries_left.pt_b - lane_boundaries_right.pt_b # <- used to be left.pt_a - left.pt_b @3/18
+
+            inside_end_boundary = dot(end_normal_vector, [x; y]) <= dot(end_normal_vector, lane_boundaries_left.pt_b) # <- flipped inequality @3/18
+
+
             if (inside_curves && inside_start_boundary && inside_end_boundary)
                 if (VehicleSim.intersection in segment.lane_types)
                     push!(segments, segment)
@@ -248,14 +267,14 @@ end
 """
 Update steering if we deviate from the center localization_state. Lane_boundaries is a vector of the current segment's lane boundaries. 
 """
-function update_steering(x, y, lane_boundaries, pid_state_straight)
+function update_steering(x, y, lane_boundaries, pid_state_straight, pulling_in)
     lane_boundaries_left = lane_boundaries[1]
     lane_boundaries_right = lane_boundaries[2]
 
     kp = 0.2 # proportional gain
     ki = 0.01 # integral gain
-    kd = 12 # derivative gain
-    max_control_input = pi / 6
+    kd = 14 # derivative gain
+    max_control_input = pi / 5
 
     if lane_boundaries[1].curvature == 0
         center_point = (lane_boundaries_left.pt_a + lane_boundaries_right.pt_a) / 2
@@ -267,7 +286,12 @@ function update_steering(x, y, lane_boundaries, pid_state_straight)
 
         pid_state_straight.error = a - b
         control_input = pid_controller(pid_state_straight, kp, ki, kd, max_control_input)
-        return default_speed, control_input
+        if !pulling_in
+            return default_speed, control_input
+        else
+            return 2.0, control_input
+        end
+
     else
         left_r = abs(1 / lane_boundaries_left.curvature)
         right_r = abs(1 / lane_boundaries_right.curvature)
@@ -384,6 +408,7 @@ function shortest_path_bfs(map, start_segment_id, end_segment_id)
 
     # loop through the queue until it's empty
     while !isempty(queue)
+        sleep(0.00001)
         # get the first path from the queue
         path = popfirst!(queue)
 

@@ -18,7 +18,7 @@ end
 
 #figure out how rows of T matrix cnage with respect to x. 
 function h_imu_jacobian(x)
-    ForwardDiff.jacobian(h_imu, x)
+	ForwardDiff.jacobian(h_imu, x)
 end
 
 function localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, Σ_proc, measurements)
@@ -67,8 +67,8 @@ function localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, Σ_proc, meas
         μ_prev = μ_k
         Σ_prev = Σ_k
 
-        #@info "estimate at k=$k is $(μ_prev[1:2])"
-        #@infiltrate
+		#@info "estimate at k=$k is $(μ_prev[1:2])"
+		#@infiltrate
     end
     μ = μ_prev
     Σ = Σ_prev
@@ -85,79 +85,54 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
     Σ_prev = -1
     t_prev = -1
 
-    setup = false
-    while !setup
-        # @info "waiting for setup"
-        sleep(0.001)
+    @info "waiting for setup"
+	controls.target_speed = 1
+	@info "setting target speed to 1"
 
-        gps_meas = -1
-        if isready(gps_channel)
-            gps_meas = take!(gps_channel)
-        else
-            continue
-        end
+	t_prev = -1
+	while length(fresh_gps_meas) < 10
+		sleep(0.00001)
+    	if isready(gps_channel)
+    	    sleep(0.000001)
+    	    meas = take!(gps_channel)
+    	    if meas.time >= t_prev
+    	        push!(fresh_gps_meas, meas)
+				t_prev = meas.time
+    	    end
+    	end
+	end
 
-        init_x = gps_meas.long
-        init_y = gps_meas.lat
-        init_z = 3.2428496460474134
+	mean_lat = mean(meas.lat for meas in fresh_gps_meas)
+	mean_long = mean(meas.long for meas in fresh_gps_meas)
 
-        default_quaternion = [0.7071088264608639, -0.0002105419891602536, 0.0002601612999704231, 0.7071046567017563]
-        default_velocity = [0.0030428557537161595, -0.0021233391786533917, -0.1077977346828422]
-        default_angular_velocity = [0.0013151135040768936, 0.012796697753244386, -0.00010083551663550507]
+	@info "mean lat/long: $mean_lat, $mean_long"
 
-        init_t = gps_meas.time
+	init_x = mean_lat
+	init_y = mean_long
+	init_z = 3.2428496460474134
 
-        μ_prev = [init_x, init_y, init_z, default_quaternion[1], default_quaternion[2], default_quaternion[3], default_quaternion[4], default_velocity[1], default_velocity[2], default_velocity[3], default_angular_velocity[1], default_angular_velocity[2], default_angular_velocity[3]]
+	default_quaternion = [0.7071088264608639, -0.0002105419891602536, 0.0002601612999704231, 0.7071046567017563]
+    default_velocity = [0, 1, 0]
+    default_angular_velocity = [0.0013151135040768936, 0.012796697753244386, -0.00010083551663550507]
 
-        Σ_prev = Diagonal([50, 50, 0.0001, 50, 50, 50, 50, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001])
+	init_t = t_prev
 
-        t_prev = init_t
+	μ_prev = [init_x, init_y, init_z, default_quaternion[1], default_quaternion[2], default_quaternion[3], default_quaternion[4], default_velocity[1], default_velocity[2], default_velocity[3], default_angular_velocity[1], default_angular_velocity[2], default_angular_velocity[3]]
 
-        controls.target_speed = 1
+	Σ_prev = Diagonal([3, 3, 0.0001, 5, 5, 5, 5, 1, 0.001, 0.001, 0.001, 0.001, 0.001])
 
-        while length(fresh_gps_meas) < 15 && length(fresh_imu_meas) < 15
-            sleep(0.00001)
-            # @info "waiting for measurements"
-            while isready(gps_channel)
-                sleep(0.00001)
-                meas = take!(gps_channel)
-                if meas.time >= t_prev
-                    push!(fresh_gps_meas, meas)
-                end
-            end
+	t_prev = init_t
 
-            while isready(imu_channel)
-                sleep(0.00001)
-                meas = take!(imu_channel)
-                if meas.time >= t_prev
-                    push!(fresh_imu_meas, meas)
-                end
-            end
-        end
 
-        # @info "setup complete"
-        measurements = vcat(fresh_gps_meas, fresh_imu_meas)
-        sort!(measurements, by=x -> x.time)
-
-        Σ_gps = Diagonal([10, 10, 5])
-        Σ_imu = Diagonal([0.1, 0.1, 0.1, 1, 1, 1])
-        Σ_proc = Diagonal([1, 1, 0.0001, 20, 20, 20, 20, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001])
-
-        μ_prev, Σ_prev, t_prev = localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, Σ_proc, measurements)
-        # @info "μ_prev: $μ_prev"
-        # @info "Σ_prev: $Σ_prev"
-        # @info "t_prev: $t_prev"
-
-        fresh_gps_meas = []
-        fresh_imu_meas = []
-
-        setup = true
+	## END OF SETUP
+    localization_state = LocalizationType(μ_prev[1:3])
+    if isready(localization_state_channel)
+        take!(localization_state_channel)
     end
+    put!(localization_state_channel, localization_state)
 
-    ## END OF SETUP
-
-    error = 0
-    n = 0
+	error = 0
+	n = 0
 
     while true
         sleep(0.00001)
@@ -184,9 +159,9 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
         sort!(measurements, by=x -> x.time)
         #@info "length of measurements: $(length(measurements))"
 
-        Σ_gps = Diagonal([10, 10, 5])
-        Σ_imu = Diagonal([1, 1, 1, 1, 1, 1])
-        Σ_proc = Diagonal([0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01])
+        Σ_gps = Diagonal([1.0, 1.0, 0.1])^2
+        Σ_imu = Diagonal([0.001,0.001,0.001,0.001,0.001,0.001])^2
+		Σ_proc = Diagonal([0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01])
 
         #@info "μ_prev: $μ_prev"
         #@info "Σ_prev: $Σ_prev"
@@ -207,12 +182,12 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
         put!(localization_state_channel, localization_state)
         #@info "localization state: $(localization_state.position[1:2])"
 
-        if isready(gt_channel)
-            gt_meas = take!(gt_channel)
-            #	@info "ground truth: $(gt_meas.position[1:2])"
-        end
+		if isready(gt_channel)
+			gt_meas = take!(gt_channel)
+		#	@info "ground truth: $(gt_meas.position[1:2])"
+		end
 
-        error = ((localization_state.position[1] - gt_meas.position[1])^2 + (localization_state.position[2] - gt_meas.position[2])^2) / 2
+		error = ((localization_state.position[1]-gt_meas.position[1])^2 + (localization_state.position[2]-gt_meas.position[2])^2)/2
 
         μ_prev = μ
         Σ_prev = Σ
