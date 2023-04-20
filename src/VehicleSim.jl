@@ -18,6 +18,7 @@ using StaticArrays
 using DifferentialEquations
 using DataStructures
 using ForwardDiff
+using Statistics
 
 include("view_car.jl")
 include("objects.jl")

@@ -73,9 +73,9 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
             take!(arrived_channel)
             @info "En route to segment $target_road_segment_id"
 
-            #@async localize(gps_channel, imu_channel, localization_state_channel, gt_channel, controls)
+            @async localize(gps_channel, imu_channel, localization_state_channel, gt_channel, controls)
             #@async perception(cam_channel, localization_state_channel, perception_state_channel)
-            @async decision_making(gt_channel, perception_state_channel, map, socket, controls, prev_segment_id, target_road_segment_id, arrived_channel)
+            @async decision_making(localization_state_channel, perception_state_channel, map, socket, controls, prev_segment_id, target_road_segment_id, arrived_channel)
 
             while controlled && isopen(socket)
                 sleep(0.0001)
