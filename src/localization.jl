@@ -75,7 +75,7 @@ function h_imu_jacobian(x)
 
 end
 
-function localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, measurements)
+function localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, Σ_proc, measurements)
     t = last(measurements).time
     for k in 1:length(measurements)
         Δ = -1
@@ -113,7 +113,7 @@ function localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, measurements)
         #@info "A: $A"
         d = h - C * μ̂ # ( 2 x 1 || 6 x 1 ) - ( ( 2 x 13 || 6 x 13 ) * 13 x 1 ) = ( 2 x 1 || 6 x 1 )
         #@info "d: $d"
-        Σ̂ = A * Σ_prev * A'   # define another type of sigma covariance for sigma process 13x13 * 13x13 * 13x13 = 13x13
+        Σ̂ = A * Σ_prev * A' + Σ_proc   # 13x13 * 13x13 * 13x13 = 13x13
         #@info "Σ̂: $Σ̂"
         Σ_k = (Σ̂^(-1) + C' * (Σ_z)^(-1) * C)^(-1) # ( 13 x 13 + ( 13 x 2 || 13 x 6 ) * ( 2 x 2 || 6 x 6 ) * ( 2 x 13 || 6 x 13 ) ) = 13 x 13
         #@info "Σ_k: $Σ_k"
@@ -212,7 +212,8 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
         # end
 
         Σ_gps = Diagonal([1, 1])
-        Σ_imu = Diagonal([0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
+        Σ_imu = Diagonal([0.1, 0.1, 0.1, 1, 1, 1])
+		Σ_proc = Diagonal([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
 
         #@info "μ_prev: $μ_prev"
         #@info "Σ_prev: $Σ_prev"
@@ -220,7 +221,7 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
         #@info "Σ_gps: $Σ_gps"
         #@info "Σ_imu: $Σ_imu"
         #@info "measurements: $measurements"
-        μ, Σ, t = localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, measurements)
+        μ, Σ, t = localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, Σ_proc, measurements)
         #@info "localize filter results:"
         #@info "μ: $μ"
         #@info "Σ: $Σ"
