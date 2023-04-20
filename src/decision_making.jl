@@ -90,7 +90,7 @@ function decision_making(localization_state_channel,
 
         if (is_localization_updated)
             next_segment = map[path[next_path_index]]
-            if in_segment(x.position[1], x.position[2], next_segment.lane_boundaries)
+            if in_segment(x.position[1], x.position[2], next_segment.lane_boundaries) # || closer_to_next_segment(x.position[1], x.position[2], curr_segment, next_segment)
                 curr_segment = next_segment
                 next_path_index += 1
                 stopped = false
