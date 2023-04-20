@@ -115,13 +115,18 @@ function decision_making(localization_state_channel,
 
             # pull out
             if curr_segment.id == target_road_segment_id && VehicleSim.loading_zone in curr_segment.lane_types
-                controls.target_speed = 3
+                controls.target_speed = 3.5
                 controls.steering_angle = -0.4
                 sleep(3.5)
                 controls.steering_angle = 0.4
                 sleep(3.5)
                 controls.steering_angle = 0.0
                 controls.target_speed = 0.0
+
+                sleep(4)
+                @info "Arrived at destination segment: $target_road_segment_id"
+                put!(arrived_channel, 1)
+                break
 
                 # controls.target_speed = 3.0
                 # target_speed, steering_angle = update_steering(x.position[1], x.position[2], curr_segment.lane_boundaries[2:3], pid_state_straight, true)
@@ -175,7 +180,6 @@ end
 Returns boolean indicating that we are in segment
 """
 function in_segment(x, y, lane_boundaries)
-    @info lane_boundaries
     x_values = []
     y_values = []
     for b in lane_boundaries
