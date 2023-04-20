@@ -90,7 +90,30 @@ function decision_making(localization_state_channel,
 
         if (is_localization_updated)
             next_segment = map[path[next_path_index]]
-            if in_segment(x.position[1], x.position[2], next_segment.lane_boundaries)
+
+            # center_point_start = (curr_segment.lane_boundaries[1].pt_a + curr_segment.lane_boundaries[2].pt_a) / 2
+            # center_point_end = (curr_segment.lane_boundaries[1].pt_b + curr_segment.lane_boundaries[2].pt_b) / 2
+            # @info center_point_start
+            # @info center_point_end
+
+            # normal_vector = center_point_start - center_point_end
+            # @info normal_vector
+
+            # a = dot(normal_vector, [x.position[1]; x.position[2]])
+            # @info a
+
+            # if a < 0
+            #     curr_segment = next_segment
+            #     next_path_index += 1
+            #     stopped = false
+            #     @info "new segment entered: $(curr_segment.id)"
+            # end
+
+            if closer_to_next_segment(x.position[1], x.position[2], curr_segment, next_segment)
+                @info "switched with new method"
+            end
+
+            if in_segment(x.position[1], x.position[2], next_segment.lane_boundaries) || closer_to_next_segment(x.position[1], x.position[2], curr_segment, next_segment)
                 curr_segment = next_segment
                 next_path_index += 1
                 stopped = false
@@ -447,6 +470,23 @@ function shortest_path_bfs(map, start_segment_id, end_segment_id)
     # if we reach this point, there is no path from start to goal
     return nothing
 end
-# end
 
+"""
+Check if we are closer to the next segment
+"""
+function closer_to_next_segment(x, y, curr_segment, next_segment)
+    curr_left = curr_segment.lane_boundaries[1]
+    curr_right = curr_segment.lane_boundaries[2]
+    next_left = next_segment.lane_boundaries[1]
+    next_right = next_segment.lane_boundaries[2]
 
+    center_of_curr_seg_x = (curr_left.pt_a[1] + curr_left.pt_b[1] + curr_right.pt_a[1] + curr_right.pt_b[1]) / 4.0
+    center_of_curr_seg_y = (curr_left.pt_a[2] + curr_left.pt_b[2] + curr_right.pt_a[2] + curr_right.pt_b[2]) / 4.0
+    center_of_next_seg_x = (next_left.pt_a[1] + next_left.pt_b[1] + next_right.pt_a[1] + next_right.pt_b[1]) / 4.0
+    center_of_next_seg_y = (next_left.pt_a[2] + next_left.pt_b[2] + next_right.pt_a[2] + next_right.pt_b[2]) / 4.0
+
+    dist_to_curr_seg = norm([x; y] - [center_of_curr_seg_x; center_of_curr_seg_y])
+    dist_to_next_seg = norm([x; y] - [center_of_next_seg_x; center_of_next_seg_y])
+
+    return dist_to_next_seg < dist_to_curr_seg
+end
