@@ -20,10 +20,9 @@ function decision_making(localization_state_channel,
     perception_state_channel,
     map,
     socket,
-    controls)
-
-    """REMOVE ME EVENTUALLY"""
-    target_road_segment_id = 94
+    controls,
+    target_road_segment_id,
+    arrived_channel)
 
     x = -1
     p = -1
@@ -35,12 +34,12 @@ function decision_making(localization_state_channel,
         sleep(0.01) # worked with gt at .05 sleep
         if (isready(localization_state_channel))
             x = take!(localization_state_channel)
-            @info "first state from localization: $x"
+            @info "initial localization state: $x"
 
             # GET SEGMENTS FROM LOCALIZATION DOESN'T ALWAYS WORK (think breaks on 101) NEED TO FIX
             curr_segments = get_segments_from_localization(x.position[1], x.position[2], map)
             if isempty(curr_segments)
-                @info "initial localization state not found on map"
+                @info "unable to locate initial position on map. are you offroading?"
                 continue
             end
             curr_segment = curr_segments[1]
@@ -58,7 +57,7 @@ function decision_making(localization_state_channel,
             end
 
             path = shortest_path
-            @info "decision making setup"
+            @info "Identified route:"
             @info path
             is_setup = true
         end
@@ -85,14 +84,12 @@ function decision_making(localization_state_channel,
             is_perception_updated = true
         end
 
-
-
         if (is_localization_updated)
             next_segment = map[path[next_path_index]]
             if in_segment(x.position[1], x.position[2], next_segment)
                 curr_segment = next_segment
                 next_path_index += 1
-                @info "curr segment: $(curr_segment)"
+                @info "new segment entered: $(curr_segment.id)"
             end
 
             if VehicleSim.stop_sign in curr_segment.lane_types
@@ -126,34 +123,36 @@ function decision_making(localization_state_channel,
             end
         end
 
-        if (is_perception_updated)
-            # [p1, p2, heading, velocity, height, lenght, width], cov]
+        # if (is_perception_updated)
+        #     # [p1, p2, heading, velocity, height, lenght, width], cov]
 
-            our_vel = [curr_speed * sin(curr_angle), curr_speed * cos(curr_angle)]
-            enemy_speed = p[3]
-            enemy_angle = p[4]
-            enemy_vel = [enemy_speed * sin(enemy_angle), enemy_speed * cos(enemy_angle)]
+        #     our_vel = [curr_speed * sin(curr_angle), curr_speed * cos(curr_angle)]
+        #     enemy_speed = p[3]
+        #     enemy_angle = p[4]
+        #     enemy_vel = [enemy_speed * sin(enemy_angle), enemy_speed * cos(enemy_angle)]
 
-            epsilon = 0.1
+        #     epsilon = 0.1
 
-            if dot(our_vel, enemy_vel) - norm(our_vel) * norm(enemy_vel) < epsilon
-                target_speed = p[4] - 0.5
-            else
-                sleep(rand(1.0:0.1:5.0))
-                target_speed = 0
-                sleep(rand(1.0:0.1:5.0))
-                target_speed = 0.5
-                sleep(rand(1.0:0.1:5.0))
-                target_speed = default_speed
-            end
-        end
-
+        #     if dot(our_vel, enemy_vel) - norm(our_vel) * norm(enemy_vel) < epsilon
+        #         target_speed = p[4] - 0.5
+        #     else
+        #         sleep(rand(1.0:0.1:5.0))
+        #         target_speed = 0
+        #         sleep(rand(1.0:0.1:5.0))
+        #         target_speed = 0.5
+        #         sleep(rand(1.0:0.1:5.0))
+        #         target_speed = default_speed
+        #     end
+        # end
 
         if (is_localization_updated || is_perception_updated)
             controls.target_speed = target_speed
             controls.steering_angle = steering_angle
         end
     end
+
+    @info "Arrived at destination segment: $target_road_segment_id"
+    put!(arrived_channel, 1)
 end
 
 

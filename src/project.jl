@@ -57,20 +57,40 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
         end
     end
 
-    controlled = true
     controls = Controls(0.0, 0.0)
 
-	try
-    	@async localize(gps_channel, imu_channel, localization_state_channel, gt_channel, controls)
-	catch e
-		@info "exception: $e"
-	end
-    #@async perception(cam_channel, localization_state_channel, perception_state_channel)
-    @async decision_making(localization_state_channel, perception_state_channel, map, socket, controls)
+    controlled = true
+    arrived_channel = Channel{Int}(1)
+    put!(arrived_channel, 1)
+    terminate = false
+    while !terminate
+        if isready(arrived_channel)
+            take!(arrived_channel)
+            println("Please enter your destination segment ID, or q to terminate program:")
+            target_road_segment_id = readline()
+            if target_road_segment_id == "q"
+                terminate = true
+                put!(arrived_channel, 1)
+                @info "Program terminated."
+            elseif !haskey(map, parse(Int, target_road_segment_id))
+                @info "Segment $target_road_segment_id does not exist in map."
+            else
+                target_road_segment_id = parse(Int, target_road_segment_id)
+                println("En route to segment $target_road_segment_id")
 
-    while controlled && isopen(socket)
-        sleep(0.01)
-        cmd = VehicleCommand(controls.steering_angle, controls.target_speed, controlled)
-        serialize(socket, cmd)
+                #@async localize(gps_channel, imu_channel, localization_state_channel, gt_channel, controls)
+                #@async perception(cam_channel, localization_state_channel, perception_state_channel)
+                @async decision_making(gt_channel, perception_state_channel, map, socket, controls, target_road_segment, arrived_channel)
+
+                while controlled && isopen(socket)
+                    sleep(0.01)
+                    cmd = VehicleCommand(controls.steering_angle, controls.target_speed, controlled)
+                    serialize(socket, cmd)
+                    if isready(arrived_channel)
+                        break
+                    end
+                end
+            end
+        end
     end
 end
