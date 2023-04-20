@@ -59,6 +59,7 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
 
     controls = Controls(0.0, 0.0)
 
+    loading_zone_ids = get_loading_zone_segment_ids(map)
     controlled = true
     arrived_channel = Channel{Int}(1)
     put!(arrived_channel, 1)
@@ -66,21 +67,22 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
     while !terminate
         if isready(arrived_channel)
             take!(arrived_channel)
-            println("Please enter your destination segment ID, or q to terminate program:")
+            @info "Please enter your destination segment ID, or q to terminate program. Available destinations with loading zones are:"
+            @info loading_zone_ids
             target_road_segment_id = readline()
             if target_road_segment_id == "q"
                 terminate = true
                 put!(arrived_channel, 1)
                 @info "Program terminated."
-            elseif !haskey(map, parse(Int, target_road_segment_id))
-                @info "Segment $target_road_segment_id does not exist in map."
+            elseif !(parse(Int, target_road_segment_id) in loading_zone_ids) #!haskey(map, parse(Int, target_road_segment_id))
+                @info "Segment $target_road_segment_id is not a suitable destination."
             else
                 target_road_segment_id = parse(Int, target_road_segment_id)
-                println("En route to segment $target_road_segment_id")
+                @info "En route to segment $target_road_segment_id"
 
                 #@async localize(gps_channel, imu_channel, localization_state_channel, gt_channel, controls)
                 #@async perception(cam_channel, localization_state_channel, perception_state_channel)
-                @async decision_making(gt_channel, perception_state_channel, map, socket, controls, target_road_segment, arrived_channel)
+                @async decision_making(gt_channel, perception_state_channel, map, socket, controls, target_road_segment_id, arrived_channel)
 
                 while controlled && isopen(socket)
                     sleep(0.01)
@@ -93,4 +95,8 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
             end
         end
     end
+end
+
+function get_loading_zone_segment_ids(map)
+    return [segment_id for (segment_id, segment) in map if VehicleSim.loading_zone in segment.lane_types]
 end

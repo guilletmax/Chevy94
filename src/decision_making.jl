@@ -252,10 +252,10 @@ function update_steering(x, y, lane_boundaries, pid_state_straight)
     lane_boundaries_left = lane_boundaries[1]
     lane_boundaries_right = lane_boundaries[2]
 
-    kp = 0.1 # proportional gain
+    kp = 0.2 # proportional gain
     ki = 0.01 # integral gain
-    kd = 15 # derivative gain
-    max_control_input = pi / 4
+    kd = 12 # derivative gain
+    max_control_input = pi / 6
 
     if lane_boundaries[1].curvature == 0
         center_point = (lane_boundaries_left.pt_a + lane_boundaries_right.pt_a) / 2
