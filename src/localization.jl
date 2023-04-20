@@ -86,6 +86,8 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
     t_prev = -1
 
     @info "waiting for setup"
+	controls.target_speed = 1
+	@info "setting target speed to 1"
 
 	t_prev = -1
 	while length(fresh_gps_meas) < 10
@@ -110,19 +112,17 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
 	init_z = 3.2428496460474134
 
 	default_quaternion = [0.7071088264608639, -0.0002105419891602536, 0.0002601612999704231, 0.7071046567017563]
-    default_velocity = [0.0030428557537161595, -0.0021233391786533917, -0.1077977346828422]
+    default_velocity = [0, 1, 0]
     default_angular_velocity = [0.0013151135040768936, 0.012796697753244386, -0.00010083551663550507]
 
 	init_t = t_prev
 
 	μ_prev = [init_x, init_y, init_z, default_quaternion[1], default_quaternion[2], default_quaternion[3], default_quaternion[4], default_velocity[1], default_velocity[2], default_velocity[3], default_angular_velocity[1], default_angular_velocity[2], default_angular_velocity[3]]
 
-	Σ_prev = Diagonal([50, 50, 0.0001, 50, 50, 50, 50, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001])
+	Σ_prev = Diagonal([3, 3, 0.0001, 5, 5, 5, 5, 1, 0.001, 0.001, 0.001, 0.001, 0.001])
 
 	t_prev = init_t
 
-	controls.target_speed = 1
-	@info "setting target speed to 1"
 
 	## END OF SETUP
     localization_state = LocalizationType(μ_prev[1:3])
@@ -159,8 +159,8 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
         sort!(measurements, by=x -> x.time)
         #@info "length of measurements: $(length(measurements))"
 
-        Σ_gps = Diagonal([10, 10, 5])
-        Σ_imu = Diagonal([1,1,1,1,1,1])
+        Σ_gps = Diagonal([1.0, 1.0, 0.1])^2
+        Σ_imu = Diagonal([0.001,0.001,0.001,0.001,0.001,0.001])^2
 		Σ_proc = Diagonal([0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01])
 
         #@info "μ_prev: $μ_prev"
