@@ -88,8 +88,6 @@ function localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, Σ_proc, meas
         end
         μ̂ = rigid_body_dynamics(μ_prev[1:3], μ_prev[4:7], μ_prev[8:10], μ_prev[11:13], Δ) # 13 x 1
 
-        #@info "μ̂: $μ̂"
-
         h = -1
         C = -1
         Σ_z = -1
@@ -134,7 +132,7 @@ function localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, Σ_proc, meas
 end
 
 
-function localize(gps_channel, imu_channel, localization_state_channel, gt_channel)
+function localize(gps_channel, imu_channel, localization_state_channel, gt_channel, controls)
     fresh_gps_meas = []
     fresh_imu_meas = []
 
@@ -145,64 +143,72 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
     setup = false
     while !setup
         sleep(0.001)
-        gps_meas = []
-		gps_meas_lat_sum = 0
-		gps_meas_long_sum = 0
-		n = 0
-		t = -1
-		@info "starting avg calculation"
-        while n < 30
-			sleep(0.001)
-			if isready(gps_channel)
-				@info "in loop"
-				sleep(0.01)
-				meas = take!(gps_channel)
-				@info "lat: $(meas.lat)"
-				@info "long: $(meas.long)"
-				gps_meas_lat_sum += meas.lat
-				gps_meas_long_sum += meas.long
-				n += 1
-				t = meas.time
-			end
+		
+		gps_meas = -1
+		if isready(gps_channel)
+			gps_meas = take!(gps_channel)
+		else
+			continue
 		end
 
-		@info "long sum: $gps_meas_long_sum"
-        default_quaternion = [1, 0, 0, 0]
-        avg_long = gps_meas_long_sum / n # gps_meas.long
-		@info "avg long: $avg_long"
-		init_x = avg_long
-        avg_lat = gps_meas_lat_sum / n # gps_meas.long
-		@info "avg lat: $avg_lat"
-        init_y = avg_lat # gps_meas.lat
-        init_z = 3.2428496460474134 #grabbed from first gt measurement, can keep
-        init_t = t # gps_meas.time
+		init_x = gps_meas.long
+		init_y = gps_meas.lat
+		init_z = 3.2428496460474134
 
-        #grabbed from first gt measurement
-        #init_x = -91.66655951015551
-        #init_y = -74.99983643946713
-        default_quaternion = [0.7071088264608639, -0.0002105419891602536, 0.0002601612999704231, 0.7071046567017563]
+		default_quaternion = [0.7071088264608639, -0.0002105419891602536, 0.0002601612999704231, 0.7071046567017563]
         default_velocity = [0.0030428557537161595, -0.0021233391786533917, -0.1077977346828422]
         default_angular_velocity = [0.0013151135040768936, 0.012796697753244386, -0.00010083551663550507]
 
-        μ_prev = [init_x, init_y, init_z, default_quaternion[1], default_quaternion[2], default_quaternion[3], default_quaternion[4], default_velocity[1], default_velocity[2], default_velocity[3], default_angular_velocity[1], default_angular_velocity[2], default_angular_velocity[3]]
-        Σ_prev = Diagonal([0.001, 0.001, 0.001, 1000, 1000, 1000, 1000, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001])
-        t_prev = init_t
+		init_t = gps_meas.time
 
-        setup = true
-        #@info "localiation setup"
-        #@info "μ_prev: $μ_prev"
-        #@info "Σ_prev: $Σ_prev"
-        #@info "t_prev: $t_prev"
+		μ_prev = [init_x, init_y, init_z, default_quaternion[1], default_quaternion[2], default_quaternion[3], default_quaternion[4], default_velocity[1], default_velocity[2], default_velocity[3], default_angular_velocity[1], default_angular_velocity[2], default_angular_velocity[3]]
 
-        localization_state = LocalizationType(μ_prev[1:3])
-        put!(localization_state_channel, localization_state)
-    end
+		Σ_prev = Diagonal([50, 50, 0.0001, 50, 50, 50, 50, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001])
+
+		t_prev = init_t
+
+		controls.target_speed = 5
+		sleep(1)
+
+		while length(fresh_gps_meas) < 15 && length(fresh_imu_meas) < 15
+			sleep(0.00001)
+			while isready(gps_channel)
+				sleep(0.00001)
+				meas = take!(gps_channel)
+				if meas.time >= t_prev
+					push!(fresh_gps_meas, meas)
+				end
+			end
+
+			while isready(imu_channel)
+				sleep(0.00001)
+				meas = take!(imu_channel)
+				if meas.time >= t_prev
+					push!(fresh_imu_meas, meas)
+				end
+			end
+		end
+
+		measurements = vcat(fresh_gps_meas, fresh_imu_meas)
+		sort!(measurements, by = x -> x.time)
+
+		Σ_gps = Diagonal([10, 10]) ### TODO: add a third item when we merge Forrest's changes with yaw
+		Σ_imu = Diagonal([0.1, 0.1, 0.1, 1, 1, 1])
+		Σ_proc = Diagonal([1, 1, 0.0001, 20, 20, 20, 20, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001])
+
+		μ_prev, Σ_prev, t_prev = localize_filter(μ_prev, Σ_prev, t_prev, Σ_gps, Σ_imu, Σ_proc, measurements)
+
+		fresh_gps_meas = []
+		fresh_imu_meas = []
+
+		setup = true
+	end
+
+	## END OF SETUP
 
 	error = 0
 	n = 0
 
-    # let decision_making start up with initial gps reading
-    sleep(1)
     while true
         sleep(0.00001)
         while isready(gps_channel)
@@ -257,7 +263,6 @@ function localize(gps_channel, imu_channel, localization_state_channel, gt_chann
 		end
 
 		error = ((localization_state.position[1]-gt_meas.position[1])^2 + (localization_state.position[2]-gt_meas.position[2])^2)/2
-		@info "mean squared error in position is $error"
 
         μ_prev = μ
         Σ_prev = Σ

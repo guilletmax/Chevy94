@@ -60,7 +60,11 @@ function autonomous_client(host::IPAddr=IPv4(0), port=4444)
     controlled = true
     controls = Controls(0.0, 0.0)
 
-    @async localize(gps_channel, imu_channel, localization_state_channel, gt_channel)
+	try
+    	@async localize(gps_channel, imu_channel, localization_state_channel, gt_channel, controls)
+	catch e
+		@info "exception: $e"
+	end
     #@async perception(cam_channel, localization_state_channel, perception_state_channel)
     @async decision_making(localization_state_channel, perception_state_channel, map, socket, controls)
 
