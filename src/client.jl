@@ -5,14 +5,18 @@ struct VehicleCommand
 end
 
 function get_c()
-    ret = ccall(:jl_tty_set_mode, Int32, (Ptr{Cvoid},Int32), stdin.handle, true)
-    ret == 0 || error("unable to switch to raw mode")
-    c = read(stdin, Char)
-    ccall(:jl_tty_set_mode, Int32, (Ptr{Cvoid},Int32), stdin.handle, false)
+    c = 'x'
+    try
+        ret = ccall(:jl_tty_set_mode, Int32, (Ptr{Cvoid}, Int32), stdin.handle, true)
+        ret == 0 || error("unable to switch to raw mode")
+        c = read(stdin, Char)
+        ccall(:jl_tty_set_mode, Int32, (Ptr{Cvoid}, Int32), stdin.handle, false)
+    catch e
+    end
     c
 end
 
-function keyboard_client(host::IPAddr=IPv4(0), port=4444; v_step = 1.0, s_step = π/10)
+function keyboard_client(host::IPAddr=IPv4(0), port=4444; v_step=1.0, s_step=π / 10)
     socket = Sockets.connect(host, port)
     (peer_host, peer_port) = getpeername(socket)
     msg = deserialize(socket) # Visualization info
@@ -37,9 +41,9 @@ function keyboard_client(host::IPAddr=IPv4(0), port=4444; v_step = 1.0, s_step =
                 num_gps += 1
             end
         end
-  #      @info "Measurements received: $num_gt gt; $num_cam cam; $num_imu imu; $num_gps gps"
+        #      @info "Measurements received: $num_gt gt; $num_cam cam; $num_imu imu; $num_gps gps"
     end
-    
+
     target_velocity = 0.0
     steering_angle = 0.0
     controlled = true
@@ -82,7 +86,7 @@ function example_client(host::IPAddr=IPv4(0), port=4444)
     @async while isopen(socket)
         state_msg = deserialize(socket)
     end
-   
+
     shutdown = false
     persist = true
     while isopen(socket)
@@ -93,7 +97,7 @@ function example_client(host::IPAddr=IPv4(0), port=4444)
             persist = false
         end
         cmd = VehicleCommand(0.0, 2.5, persist, shutdown)
-        serialize(socket, cmd) 
+        serialize(socket, cmd)
     end
 
 end
