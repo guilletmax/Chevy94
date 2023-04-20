@@ -17,6 +17,7 @@ using Serialization
 using StaticArrays
 using DifferentialEquations
 using DataStructures
+using ForwardDiff
 
 include("view_car.jl")
 include("objects.jl")
